@@ -57,11 +57,11 @@ SQLite 同步级别为 FULL，正文和标题在一个事务中更新，版本�
 
 视觉：主会话已将实际 Windows 画面与 A 方向作本地目视比较，暖白平面、宋体正文、目录与保存入口可读，未发现本票阻塞问题。12ui target-only 对照 kit 已完成，mode=unanchored、gate=not-applicable，token patch 为空、无购买任务；这不是自动像素匹配通过。方案中完整后续模块与演示品牌/头像/人物等不属于本票，不据此新增假入口。
 
-以上原生证据对应错误横幅修复前的程序。修复后仅改变保存错误状态归属及测试/文档；最终程序的原生重开 smoke 由主会话在提交后复核。
+以上完整路径证据对应错误横幅修复前的程序。修复后仅改变保存错误状态归属及测试/文档；2026-10-16 主会话已对最终程序补做真实 Windows 重开检查：同一资料库、作品、章节标题和全部 77 字正文完整找回，显示“已保存到本地”，没有错误横幅。随后正常关闭并确认测试窗口退出。
 
 
 ## 引入组件的版本与许可
 
 版本以本次 package-lock.json / Cargo.lock 锁定结果为准，许可由主会话核对已安装 package.json 与 Cargo 注册包 Cargo.toml：React / react-dom 19.3.1（MIT）；@tauri-apps/api 2.12.4（Apache-2.0 OR MIT）；@tauri-apps/plugin-dialog 2.8.3（MIT OR Apache-2.0）；Vite 8.3.4、Vitest 4.1.11、jsdom 26.1.0（均 MIT）；Rust tauri 2.12.4（Apache-2.0 OR MIT）、tauri-plugin-dialog 2.8.3、rusqlite 0.38.0（MIT）。未引入付费组件。此记录是本票直接组件选型核对，不是全依赖法律审计。
 
-错误横幅修复后 debug 程序 SHA-256：14BC678888220FBAB183D86C9F0E4912EE061546973D66EB4B9088A176078EBE。该构建的前端类型检查与打包通过；主会话将用此程序复核正常重开。
+错误横幅修复后 debug 程序 SHA-256：14BC678888220FBAB183D86C9F0E4912EE061546973D66EB4B9088A176078EBE。该构建的前端类型检查与打包通过，主会话已核对该哈希并完成上述正常重开检查。
