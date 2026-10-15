@@ -1,0 +1,165 @@
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { open } from '@tauri-apps/plugin-dialog';
+import { application } from './application';
+import { EditorSession } from './editor-session';
+import { characterCount, errorText, type LibraryView } from './model';
+import './styles.css';
+
+const editor = new EditorSession(application);
+const saveLabels = { saved:'已保存到本地', unsaved:'尚未保存', saving:'正在保存…', error:'保存未完成' };
+
+export default function App() {
+  const snapshot = useSyncExternalStore(editor.subscribe,editor.getSnapshot);
+  const chapter = snapshot.chapter;
+  const [library,setLibrary] = useState<LibraryView|null>(null);
+  const [defaultPath,setDefaultPath] = useState('');
+  const [ready,setReady] = useState(false);
+  const [busy,setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [error,setError] = useState<string|null>(null);
+  const [creating,setCreating] = useState(false);
+  const [workTitle,setWorkTitle] = useState('');
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const closeRef = useRef<() => Promise<void>>(async () => {});
+  const saveRef = useRef<() => Promise<void>>(async () => {});
+  const currentWork = library?.works.find(work => work.id===chapter?.workId);
+
+  // Blur commits the native input method before taking the final persistence snapshot.
+  async function settleInput() {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    await new Promise<void>(resolve => setTimeout(resolve,0));
+    if (!(await editor.flush())) throw new Error(editor.getSnapshot().error ?? '请先完成中文输入，再保存或关闭。当前文字仍保留。');
+  }
+  async function action(operation: () => Promise<void>) {
+    if (busyRef.current) return;
+    busyRef.current=true;
+    try {
+      await settleInput();
+      setBusy(true); setError(null);
+      await operation();
+    } catch (cause) {
+      // Persistence errors belong to EditorSession so a later successful autosave clears them.
+      setError(editor.getSnapshot().error ? null : errorText(cause));
+    }
+    finally { busyRef.current=false; setBusy(false); }
+  }
+  function accept(next:LibraryView) {
+    editor.load(next.chapter); setLibrary(next); setCreating(false);
+  }
+  async function selectLibrary(path?:string) {
+    await action(async () => {
+      const chosen = path ?? await open({directory:true,multiple:false,title:'选择资料库文件夹'});
+      if (typeof chosen === 'string') accept(await application.openLibrary(chosen));
+    });
+  }
+  async function createWork() {
+    await action(async () => { accept(await application.createWork(workTitle)); setWorkTitle(''); });
+    bodyRef.current?.focus();
+  }
+  async function selectWork(id:string) {
+    await action(async () => {
+      const next = await application.selectWork(id);
+      editor.load(next);
+      setCreating(false);
+    });
+    bodyRef.current?.focus();
+  }
+  closeRef.current = () => action(async () => { await getCurrentWindow().destroy(); });
+  saveRef.current = () => action(async () => {});
+  useEffect(() => {
+    if (!isTauri()) {
+      setError('请在 Windows 应用中打开写一本书。浏览器页面无法访问本地资料库。');
+      return;
+    }
+    let disposed=false;
+    let unlisten:(()=>void)|undefined;
+    void (async () => {
+      try {
+        unlisten=await getCurrentWindow().onCloseRequested(event => {
+          event.preventDefault();
+          void closeRef.current();
+        });
+        const boot=await application.bootstrap();
+        if (disposed) return;
+        setDefaultPath(boot.defaultPath);
+        if (boot.library) accept(boot.library);
+        setError(boot.restoreError);
+        setReady(true);
+      } catch(cause) { if (!disposed) setError(errorText(cause)); }
+    })();
+    const shortcut=(event:KeyboardEvent) => {
+      if (event.ctrlKey && event.key.toLowerCase()==='s') { event.preventDefault(); void saveRef.current(); }
+    };
+    window.addEventListener('keydown',shortcut);
+    return () => { disposed=true;unlisten?.();window.removeEventListener('keydown',shortcut); };
+  },[]);
+  const compositionProps = {
+    onCompositionStart: () => editor.beginComposition(),
+    onCompositionEnd: () => editor.endComposition(),
+  };
+
+  return <div className="app">
+    <header className="app-header">
+      <span className="brand"><span className="brand-mark" aria-hidden="true">书</span>写一本书</span>
+      {currentWork && <span className="book-context">{currentWork.title}</span>}
+      <span className="local-label">本地写作</span>
+    </header>
+    {(error || snapshot.error) && <div className="error-banner" role="alert">
+      <span>{error || snapshot.error}</span>
+      {chapter && <button onClick={() => void saveRef.current()} disabled={busy}>重试保存</button>}
+    </div>}
+    {!library ? <main className="welcome">
+      <span className="eyebrow">你的书，从这里开始</span>
+      <h1>留一个地方，<br/>写下第一句话。</h1>
+      <p>选择资料库，让作品保存在你自己的电脑上。<br/>无需账户，离线也能继续写。</p>
+      <div className="welcome-actions">
+        <button className="primary" disabled={!ready || busy} onClick={() => void selectLibrary(defaultPath)}>使用默认资料库</button>
+        <button disabled={!ready || busy} onClick={() => void selectLibrary()}>选择其他文件夹</button>
+      </div>
+      {defaultPath && <p className="location">默认位置<span>{defaultPath}</span></p>}
+    </main> : <div className="workspace">
+      <aside className="sidebar" aria-label="作品与章节">
+        <div className="section-heading"><span>作品</span><button title="新建作品" aria-label="新建作品" disabled={busy} onClick={() => setCreating(true)}>＋</button></div>
+        <nav className="work-list">
+          {library.works.map(work => <button key={work.id} className={work.id===chapter?.workId?'selected':''} disabled={busy}
+            onClick={() => void selectWork(work.id)}><span className="work-icon" aria-hidden="true">▤</span><span>{work.title}</span></button>)}
+        </nav>
+        {currentWork && <div className="chapter-directory"><div className="section-heading">写作</div>
+          <div className="chapter-item" aria-current="page"><span aria-hidden="true">≡</span>{chapter?.title || '未命名章节'}</div></div>}
+        <div className="library-location"><span>资料库位置</span><p title={library.path}>{library.path}</p>
+          <button disabled={busy} onClick={() => void selectLibrary()}>切换资料库</button></div>
+      </aside>
+      <main className="main-area">
+        {creating || !chapter ? <section className="new-work">
+          <span className="eyebrow">新建创作作品</span><h1>先取个暂名，<br/>然后开始写。</h1>
+          <p>名字还没想好，也可以直接开始。</p>
+          <form onSubmit={event => { event.preventDefault();void createWork(); }}>
+            <label htmlFor="work-title">作品暂名</label>
+            <input id="work-title" autoFocus value={workTitle} placeholder="未命名作品" disabled={busy}
+              onChange={event => setWorkTitle(event.target.value)}/>
+            <div className="form-actions"><button type="submit" className="primary" disabled={busy}>创建作品并写首章</button>
+              {chapter && <button type="button" disabled={busy} onClick={() => setCreating(false)}>返回正文</button>}</div>
+          </form>
+        </section> : <>
+          <div className="document-bar"><span className="active-tab">{chapter.title || '未命名章节'}</span>
+            <div className="save-tools"><span className={'save-state '+snapshot.status} role="status">{saveLabels[snapshot.status]}</span>
+              <button disabled={busy} title="保存（Ctrl+S）" onClick={() => void saveRef.current()}>保存</button></div></div>
+          <div className="editor-scroll">
+            <section className="manuscript">
+              <label className="sr-only" htmlFor="chapter-title">章节标题</label>
+              <input id="chapter-title" className="chapter-title" value={chapter.title} readOnly={busy}
+                {...compositionProps} onChange={event => editor.edit('title',event.target.value)}/>
+              <label className="sr-only" htmlFor="chapter-body">章节正文</label>
+              <textarea id="chapter-body" ref={bodyRef} className="chapter-body" spellCheck={false}
+                value={chapter.body} readOnly={busy} placeholder="在这里写下第一句话……"
+                {...compositionProps} onChange={event => editor.edit('body',event.target.value)}/>
+            </section>
+          </div>
+          <footer className="editor-footer"><span>字数（含标点） {characterCount(chapter.body)}</span><span>纯文本 · 本地资料库</span></footer>
+        </>}
+      </main>
+    </div>}
+  </div>;
+}

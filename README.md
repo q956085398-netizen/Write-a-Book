@@ -11,3 +11,27 @@
 又比如，写作页面标题部分可以给它加入标签显示这是支线还是主线。
 又比如，无论是拆书还是写作，都不时会有灵感跳出，这个时候要怎么设计灵感库和灵感收集页？如何区分专属于这本书的灵感，还有通用的灵感？
 又比如，写作的时候不一定都是在写正文，有时候希望会有个便签或者侧页，可以写下这章的目标是什么？情绪是什么？人物有谁？之类的，不要试图定制化统一页面，因为这些会随着写作不断需要修改。
+
+## 本地应用：首章写作路径（T01 / Issue #2）
+
+当前实现资料库选择、新建暂名作品、首章纯文本编辑、自动/手动保存、正常关闭补存与重新打开继续写。核心操作无需账户、网络或 AI 配置。它是完整首版的第一条交付路径，不代表其余模块已完成。
+
+Windows 开发环境需 Node.js 22.12+（或 24+）、Rust MSVC 工具链、Visual Studio C++ 构建工具及 WebView2。
+
+    npm ci
+    npm run tauri -- dev
+
+构建本机可运行程序（不生成安装包）：
+
+    npm run tauri -- build --no-bundle
+
+产物：src-tauri/target/release/write-a-book.exe。单独运行 npm run dev 只启动前端页面，浏览器不能访问真实资料库，也不能作为原生验收替代。
+
+验证：
+
+    npm test
+    cargo test --manifest-path src-tauri/Cargo.toml --lib
+    npm run build
+    cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+
+存储边界、验证记录与尚未完成范围见 [T01 实现说明](docs/t01-first-chapter.md)。
