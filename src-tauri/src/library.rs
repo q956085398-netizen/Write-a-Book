@@ -1,5 +1,7 @@
 mod attachments;
+mod recovery;
 pub use attachments::Attachment;
+pub use recovery::{RecoveryCandidate, RecoveryDraft};
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -19,7 +21,7 @@ pub struct Work {
     pub title: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Chapter {
     pub id: String,
@@ -31,7 +33,7 @@ pub struct Chapter {
     pub revision: i64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveChapter {
     pub id: String,
@@ -234,7 +236,21 @@ impl Library {
             )
             .map_err(db_error)?;
         if changed != 1 {
-            return Err("保存未完成：此章节已在其他窗口中修改或不再存在。当前输入仍保留，请先复制文字并重新打开资料库。".into());
+            // The write may have committed before its IPC receipt was lost. Exact matching
+            // content is already durable; acknowledge it without replaying or overwriting it.
+            let saved: Option<Chapter> = tx.query_row(
+                "SELECT c.id,c.work_id,c.content_id,c.title,t.body,t.revision,t.body_format FROM chapters c JOIN contents t ON t.id=c.content_id WHERE c.id=? AND c.content_id=?",
+                params![draft.id,draft.content_id], |r| Ok(Chapter { id:r.get(0)?,work_id:r.get(1)?,content_id:r.get(2)?,title:r.get(3)?,body:r.get(4)?,revision:r.get(5)?,body_format:r.get(6)? })
+            ).optional().map_err(db_error)?;
+            if let Some(saved) = saved {
+                if saved.title == draft.title
+                    && saved.body == draft.body
+                    && saved.body_format == draft.body_format
+                {
+                    return Ok(saved);
+                }
+            }
+            return Err("保存未完成：此章节已在其他窗口中修改或不再存在。当前输入仍保留；可查看恢复草稿并另存一份，原章节不会被覆盖。".into());
         }
         tx.execute(
             "UPDATE chapters SET title=? WHERE id=?",

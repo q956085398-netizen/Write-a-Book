@@ -1,5 +1,7 @@
 mod library;
-use library::{Application, Attachment, Chapter, LibraryView, SaveChapter};
+use library::{
+    Application, Attachment, Chapter, LibraryView, RecoveryCandidate, RecoveryDraft, SaveChapter,
+};
 use serde::Serialize;
 use std::{path::Path, sync::Mutex};
 use tauri::Manager;
@@ -60,6 +62,40 @@ fn save_chapter(draft: SaveChapter, state: tauri::State<AppState>) -> library::R
     access(&state, |a| a.library()?.save_chapter(&draft))
 }
 #[tauri::command]
+fn checkpoint_chapter(
+    snapshot: RecoveryDraft,
+    state: tauri::State<AppState>,
+) -> library::Result<()> {
+    access(&state, |a| a.library()?.checkpoint_chapter(&snapshot))
+}
+#[tauri::command]
+fn acknowledge_recovery(
+    session_id: String,
+    content_id: String,
+    sequence: i64,
+    state: tauri::State<AppState>,
+) -> library::Result<()> {
+    access(&state, |a| {
+        a.library()?
+            .acknowledge_recovery(&session_id, &content_id, sequence)
+    })
+}
+#[tauri::command]
+fn list_recovery(state: tauri::State<AppState>) -> library::Result<Vec<RecoveryCandidate>> {
+    access(&state, |a| a.library()?.list_recovery())
+}
+#[tauri::command]
+fn recover_chapter(
+    id: String,
+    sequence: i64,
+    as_copy: bool,
+    state: tauri::State<AppState>,
+) -> library::Result<LibraryView> {
+    access(&state, |a| {
+        a.library()?.recover_chapter(&id, sequence, as_copy)
+    })
+}
+#[tauri::command]
 fn import_image(
     content_id: String,
     name: String,
@@ -93,6 +129,10 @@ pub fn run() {
             create_work,
             select_work,
             save_chapter,
+            checkpoint_chapter,
+            acknowledge_recovery,
+            list_recovery,
+            recover_chapter,
             import_image,
             read_image
         ])

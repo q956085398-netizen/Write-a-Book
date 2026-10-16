@@ -10,7 +10,7 @@ afterEach(() => { editors.splice(0).forEach(e => e.destroy()); sessions.splice(0
 const base: Chapter = { id: 'chapter', contentId: 'content', workId: 'work', title: '第一章', body: '', bodyFormat: 'plain-text', revision: 0 };
 function edit(chapter = base) {
   const saved: Chapter[] = [];
-  const session = new EditorSession({ saveChapter: async (draft: SaveChapter) => { const receipt = { ...chapter, ...draft, revision: draft.expectedRevision + 1 }; saved.push(receipt); return receipt; } });
+  const session = new EditorSession({ checkpointChapter: async () => {}, acknowledgeRecovery: async () => {}, saveChapter: async (draft: SaveChapter) => { const receipt = { ...chapter, ...draft, revision: draft.expectedRevision + 1 }; saved.push(receipt); return receipt; } });
   session.load(chapter); sessions.push(session);
   const editor = new Editor({ element: document.createElement('div'), extensions: richExtensions(), content: readDocument(chapter), enableInputRules: false,
     onUpdate: ({ editor }) => session.editDocument(writeDocument(editor.getJSON())) });

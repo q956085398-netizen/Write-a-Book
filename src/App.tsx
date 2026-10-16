@@ -9,10 +9,10 @@ import { RichEditor } from './RichEditor';
 import { documentText } from './rich-content';
 import './styles.css';
 
-const editor = new EditorSession(application);
 const saveLabels = { saved:'已保存到本地', unsaved:'尚未保存', saving:'正在保存…', error:'保存未完成' };
 
 export default function App() {
+  const [editor] = useState(() => new EditorSession(application));
   const snapshot = useSyncExternalStore(editor.subscribe,editor.getSnapshot);
   const chapter = snapshot.chapter;
   const count = useMemo(() => chapter ? characterCount(documentText(chapter)) : 0, [chapter?.body, chapter?.bodyFormat]);
@@ -28,22 +28,22 @@ export default function App() {
   const saveRef = useRef<() => Promise<void>>(async () => {});
   const currentWork = library?.works.find(work => work.id===chapter?.workId);
 
-  // Blur commits the native input method before taking the final persistence snapshot.
+  // Closing or switching must never force an IME candidate to become committed text.
   async function settleInput() {
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    await new Promise<void>(resolve => setTimeout(resolve,0));
     if (!(await editor.flush())) throw new Error(editor.getSnapshot().error ?? '请先完成中文输入，再保存或关闭。当前文字仍保留。');
   }
   async function action(operation: () => Promise<void>) {
-    if (busyRef.current) return;
+    if (busyRef.current) return false;
     busyRef.current=true;
     try {
       await settleInput();
       setBusy(true); setError(null);
       await operation();
+      return true;
     } catch (cause) {
       // Persistence errors belong to EditorSession so a later successful autosave clears them.
       setError(editor.getSnapshot().error ? null : errorText(cause));
+      return false;
     }
     finally { busyRef.current=false; setBusy(false); }
   }
@@ -57,19 +57,19 @@ export default function App() {
     });
   }
   async function createWork() {
-    await action(async () => { accept(await application.createWork(workTitle)); setWorkTitle(''); });
-    document.getElementById('chapter-body')?.focus();
+    const changed = await action(async () => { accept(await application.createWork(workTitle)); setWorkTitle(''); });
+    if (changed) document.getElementById('chapter-body')?.focus();
   }
   async function selectWork(id:string) {
-    await action(async () => {
+    const changed = await action(async () => {
       const next = await application.selectWork(id);
       editor.load(next);
       setCreating(false);
     });
-    document.getElementById('chapter-body')?.focus();
+    if (changed) document.getElementById('chapter-body')?.focus();
   }
-  closeRef.current = () => action(async () => { await getCurrentWindow().destroy(); });
-  saveRef.current = () => action(async () => {});
+  closeRef.current = async () => { await action(async () => { await getCurrentWindow().destroy(); }); };
+  saveRef.current = async () => { await action(async () => {}); };
   useEffect(() => {
     if (!isTauri()) {
       setError('请在 Windows 应用中打开写一本书。浏览器页面无法访问本地资料库。');
@@ -95,14 +95,14 @@ export default function App() {
       if (event.ctrlKey && event.key.toLowerCase()==='s') { event.preventDefault(); void saveRef.current(); }
     };
     window.addEventListener('keydown',shortcut);
-    return () => { disposed=true;unlisten?.();window.removeEventListener('keydown',shortcut); };
+    return () => { disposed=true;unlisten?.();window.removeEventListener('keydown',shortcut);editor.dispose(); };
   },[]);
   const compositionProps = {
     onCompositionStart: () => editor.beginComposition(),
     onCompositionEnd: () => editor.endComposition(),
   };
 
-  return <div className="app">
+  return <div className="app" onMouseDownCapture={event => { if (editor.isComposing() && event.target instanceof Element && event.target.closest('button')) event.preventDefault(); }}>
     <header className="app-header">
       <span className="brand"><span className="brand-mark" aria-hidden="true">书</span>写一本书</span>
       {currentWork && <span className="book-context">{currentWork.title}</span>}
@@ -123,7 +123,7 @@ export default function App() {
       {defaultPath && <p className="location">默认位置<span>{defaultPath}</span></p>}
     </main> : <div className="workspace">
       <aside className="sidebar" aria-label="作品与章节">
-        <div className="section-heading"><span>作品</span><button title="新建作品" aria-label="新建作品" disabled={busy} onClick={() => setCreating(true)}>＋</button></div>
+        <div className="section-heading"><span>作品</span><button title="新建作品" aria-label="新建作品" disabled={busy} onClick={() => void action(async () => setCreating(true))}>＋</button></div>
         <nav className="work-list">
           {library.works.map(work => <button key={work.id} className={work.id===chapter?.workId?'selected':''} disabled={busy}
             onClick={() => void selectWork(work.id)}><span className="work-icon" aria-hidden="true">▤</span><span>{work.title}</span></button>)}

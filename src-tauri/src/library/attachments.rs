@@ -11,7 +11,7 @@ pub struct Attachment {
     pub size: usize,
 }
 impl Library {
-    fn attachment_dir(&self) -> Result<PathBuf> {
+    pub(super) fn attachment_dir(&self) -> Result<PathBuf> {
         let dir = self.root.join("attachments");
         let metadata = fs::symlink_metadata(&dir).map_err(db_error)?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() {
@@ -83,7 +83,11 @@ impl Library {
             size: bytes.len(),
         })
     }
-    fn attachment_file(&self, content_id: &str, id: &str) -> Result<(PathBuf, String, usize)> {
+    pub(super) fn attachment_file(
+        &self,
+        content_id: &str,
+        id: &str,
+    ) -> Result<(PathBuf, String, usize)> {
         if Uuid::parse_str(id)
             .map(|u| u.to_string() != id)
             .unwrap_or(true)
