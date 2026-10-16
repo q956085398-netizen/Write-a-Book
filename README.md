@@ -12,9 +12,11 @@
 又比如，无论是拆书还是写作，都不时会有灵感跳出，这个时候要怎么设计灵感库和灵感收集页？如何区分专属于这本书的灵感，还有通用的灵感？
 又比如，写作的时候不一定都是在写正文，有时候希望会有个便签或者侧页，可以写下这章的目标是什么？情绪是什么？人物有谁？之类的，不要试图定制化统一页面，因为这些会随着写作不断需要修改。
 
-## 本地应用：首章写作路径（T01 / Issue #2）
+## 本地应用：首章图文写作与 Windows 安装（T01、T02、T53）
 
-当前实现资料库选择、新建暂名作品、首章纯文本编辑、自动/手动保存、正常关闭补存与重新打开继续写。核心操作无需账户、网络或 AI 配置。它是完整首版的第一条交付路径，不代表其余模块已完成。
+当前实现资料库选择、新建暂名作品、首章图文编辑、常用格式、资料库图片、自动/手动保存、正常关闭补存与重新打开继续写，并提供 Windows NSIS 安装包。核心写作操作无需账户、网络或 AI 配置。这些是完整首版的早期交付路径，不代表其余模块已完成。
+
+旧纯文本资料库会事务升级到 schema 2，旧正文仅在实际编辑时转为结构化图文。升级后须使用支持 schema 2 的应用，旧 T01 程序无法打开该版本资料库。
 
 Windows 开发环境需 Node.js 22.12+（或 24+）、Rust MSVC 工具链、Visual Studio C++ 构建工具及 WebView2。
 
@@ -27,6 +29,12 @@ Windows 开发环境需 Node.js 22.12+（或 24+）、Rust MSVC 工具链、Visu
 
 产物：src-tauri/target/release/write-a-book.exe。单独运行 npm run dev 只启动前端页面，浏览器不能访问真实资料库，也不能作为原生验收替代。
 
+构建 Windows 安装包：
+
+    npm run tauri -- build --bundles nsis
+
+产物：src-tauri/target/release/bundle/nsis/写一本书_0.1.0_x64-setup.exe。交互安装可选择桌面快捷方式，卸载保留资料库与应用设置。缺少 WebView2 时使用下载引导程序；已有运行时可离线写作，不默认承诺离线安装。
+
 验证：
 
     npm test
@@ -34,4 +42,4 @@ Windows 开发环境需 Node.js 22.12+（或 24+）、Rust MSVC 工具链、Visu
     npm run build
     cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
-存储边界、验证记录与尚未完成范围见 [T01 实现说明](docs/t01-first-chapter.md)。
+存储边界、验证记录与尚未完成范围见 [T01 实现说明](docs/t01-first-chapter.md)、[T02 图文编辑](docs/t02-rich-editor.md)和 [T53 安装与资料保留](docs/t53-windows-installer.md)。最终整包仍需集成验收工单复测。
