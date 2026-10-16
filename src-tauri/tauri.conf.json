@@ -1,1 +1,55 @@
-{"$schema":"https://schema.tauri.app/config/2","productName":"写一本书","version":"0.1.0","identifier":"net.writeabook.desktop","build":{"beforeDevCommand":"npm run dev","devUrl":"http://127.0.0.1:1420","beforeBuildCommand":"npm run build","frontendDist":"../dist"},"app":{"windows":[{"label":"main","title":"写一本书","width":1280,"height":860,"minWidth":760,"minHeight":540}],"security":{"csp":"default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:"}},"bundle":{"active":false}}
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "写一本书",
+  "version": "0.1.0",
+  "identifier": "net.writeabook.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "写一本书",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 760,
+        "minHeight": 540
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "publisher": "Write-a-Book",
+    "shortDescription": "本地写作与资料库",
+    "windows": {
+      "allowDowngrades": false,
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "template": "installer/installer.nsi"
+      }
+    }
+  }
+}
