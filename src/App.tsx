@@ -6,9 +6,11 @@ import { application } from './application';
 import { EditorSession } from './editor-session';
 import { characterCount, errorText, type LibraryView } from './model';
 import { RichEditor } from './RichEditor';
+import { CloseReminder, SaveFailureBanner } from './recovery-status';
 import { documentText } from './rich-content';
 import './styles.css';
 
+const compositionNotice = '请先完成中文输入，再保存或关闭。当前文字仍保留。';
 const saveLabels = { saved:'已保存到本地', unsaved:'尚未保存', saving:'正在保存…', error:'保存未完成' };
 
 export default function App() {
@@ -23,6 +25,8 @@ export default function App() {
   const busyRef = useRef(false);
   const [error,setError] = useState<string|null>(null);
   const [creating,setCreating] = useState(false);
+  const [closeWarning,setCloseWarning] = useState(false);
+  const [closing,setClosing] = useState(false);
   const [workTitle,setWorkTitle] = useState('');
   const closeRef = useRef<() => Promise<void>>(async () => {});
   const saveRef = useRef<() => Promise<void>>(async () => {});
@@ -30,7 +34,7 @@ export default function App() {
 
   // Closing or switching must never force an IME candidate to become committed text.
   async function settleInput() {
-    if (!(await editor.flush())) throw new Error(editor.getSnapshot().error ?? '请先完成中文输入，再保存或关闭。当前文字仍保留。');
+    if (!(await editor.flush())) throw new Error(editor.getSnapshot().error ?? compositionNotice);
   }
   async function action(operation: () => Promise<void>) {
     if (busyRef.current) return false;
@@ -42,7 +46,7 @@ export default function App() {
       return true;
     } catch (cause) {
       // Persistence errors belong to EditorSession so a later successful autosave clears them.
-      setError(editor.getSnapshot().error ? null : errorText(cause));
+      setError(editor.isComposing() ? compositionNotice : editor.getSnapshot().error ? null : errorText(cause));
       return false;
     }
     finally { busyRef.current=false; setBusy(false); }
@@ -68,7 +72,13 @@ export default function App() {
     });
     if (changed) document.getElementById('chapter-body')?.focus();
   }
-  closeRef.current = async () => { await action(async () => { await getCurrentWindow().destroy(); }); };
+  closeRef.current = async () => {
+    if (busyRef.current) return;
+    setClosing(true);
+    const closed = await action(async () => { await getCurrentWindow().destroy(); });
+    setClosing(false);
+    if (!closed && !editor.isComposing()) setCloseWarning(true);
+  };
   saveRef.current = async () => { await action(async () => {}); };
   useEffect(() => {
     if (!isTauri()) {
@@ -102,17 +112,14 @@ export default function App() {
     onCompositionEnd: () => editor.endComposition(),
   };
 
-  return <div className="app" onMouseDownCapture={event => { if (editor.isComposing() && event.target instanceof Element && event.target.closest('button')) event.preventDefault(); }}>
-    <header className="app-header">
+  return <div className="app" onCompositionEndCapture={() => setError(current => current === compositionNotice ? null : current)} onMouseDownCapture={event => { if (editor.isComposing() && event.target instanceof Element && event.target.closest('button')) event.preventDefault(); }}>
+    <header className="app-header" inert={closeWarning}>
       <span className="brand"><span className="brand-mark" aria-hidden="true">书</span>写一本书</span>
       {currentWork && <span className="book-context">{currentWork.title}</span>}
       <span className="local-label">本地写作</span>
     </header>
-    {(error || snapshot.error) && <div className="error-banner" role="alert">
-      <span>{error || snapshot.error}</span>
-      {chapter && <button onClick={() => void saveRef.current()} disabled={busy}>重试保存</button>}
-    </div>}
-    {!library ? <main className="welcome">
+    {error && <div className="error-banner" role="alert" inert={closeWarning}><span>{error}</span></div>}
+    {!library ? <main className="welcome" inert={closeWarning}>
       <span className="eyebrow">你的书，从这里开始</span>
       <h1>留一个地方，<br/>写下第一句话。</h1>
       <p>选择资料库，让作品保存在你自己的电脑上。<br/>无需账户，离线也能继续写。</p>
@@ -121,7 +128,7 @@ export default function App() {
         <button disabled={!ready || busy} onClick={() => void selectLibrary()}>选择其他文件夹</button>
       </div>
       {defaultPath && <p className="location">默认位置<span>{defaultPath}</span></p>}
-    </main> : <div className="workspace">
+    </main> : <div className="workspace" inert={closeWarning}>
       <aside className="sidebar" aria-label="作品与章节">
         <div className="section-heading"><span>作品</span><button title="新建作品" aria-label="新建作品" disabled={busy} onClick={() => void action(async () => setCreating(true))}>＋</button></div>
         <nav className="work-list">
@@ -148,6 +155,7 @@ export default function App() {
           <div className="document-bar"><span className="active-tab">{chapter.title || '未命名章节'}</span>
             <div className="save-tools"><span className={'save-state '+snapshot.status} role="status">{saveLabels[snapshot.status]}</span>
               <button disabled={busy} title="保存（Ctrl+S）" onClick={() => void saveRef.current()}>保存</button></div></div>
+          {snapshot.error && <SaveFailureBanner snapshot={snapshot} busy={busy || closing} onRetry={() => void saveRef.current()}/>}
           <div className="editor-scroll">
             <section className="manuscript">
               <label className="sr-only" htmlFor="chapter-title">章节标题</label>
@@ -160,5 +168,6 @@ export default function App() {
         </>}
       </main>
     </div>}
+    {closeWarning && <CloseReminder snapshot={snapshot} error={error} busy={busy || closing} onReturn={() => setCloseWarning(false)} onRetryClose={() => void closeRef.current()}/>}
   </div>;
 }

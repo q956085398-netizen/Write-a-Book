@@ -86,3 +86,20 @@ h1{font-family:"Source Han Serif SC","Songti SC","SimSun",serif;font-weight:400;
 .editor-notice{display:flex;gap:12px;align-items:center}.editor-notice button{font-size:12px;padding:3px 8px}
 .link-form{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin-bottom:18px;font-size:12px}.link-form label{flex:1;min-width:200px}.link-form input{display:block;width:100%;padding:8px;border:1px solid #d9ddd5;margin-top:5px}.link-form button{padding:8px}
 .content-error textarea{width:100%;min-height:300px}
+
+/* T03 derives these surfaces from the approved A branch's a.html export:
+   6px rose alert, 440px white dialog, 12px corners, 31px inset, restrained green action.
+   Text wraps responsively and uses local fonts; sample account/cloud controls are omitted. */
+.save-failure{margin:14px 24px 0;padding:12px 14px;display:flex;align-items:center;gap:12px;flex-shrink:0;background:#f3e5e2;border-radius:6px;color:#a8433a;line-height:1.6}
+.save-warning-mark{display:grid;place-items:center;width:24px;height:24px;flex-shrink:0;background:#d5675d;border-radius:50%;color:white;font-size:17px;font-weight:600}
+.save-failure-message{flex:1;min-width:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 12px}
+.save-failure-message strong{font-size:14px;font-weight:600}.save-failure-message>span{font-size:13px}.save-failure-message small{flex-basis:100%;overflow-wrap:anywhere;font-size:12px;color:#91534d}
+.save-failure button{flex-shrink:0;border-color:#d9b4ae;color:#a8433a;font-size:13px;padding:7px 12px}
+.close-overlay{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:24px;background:rgba(34,43,36,.13)}
+.close-reminder{width:min(440px,100%);max-height:calc(100dvh - 48px);overflow:auto;background:#fff;border-radius:12px;padding:30px 32px;box-shadow:0 9px 25px rgba(34,43,36,.18)}
+.close-heading{display:flex;align-items:center;gap:14px}.close-heading .save-warning-mark{width:31px;height:31px;font-size:20px}.close-heading h2{margin:0;color:#2e3d44;font-size:18px;font-weight:600;line-height:1.5}
+.close-reminder p{margin:12px 0 0 45px;font-size:14px;line-height:1.6;color:#657174;overflow-wrap:anywhere}.close-reminder p.close-detail{font-size:12px;color:#a8433a}
+.close-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:25px;flex-wrap:wrap}.close-actions button{min-height:38px;padding:8px 14px;border-radius:9px}.close-actions .primary{background:#426844;border-color:#426844}.close-actions .primary:hover:not(:disabled){background:#517453}
+@media(max-width:700px){.save-failure{margin:12px 12px 0;align-items:flex-start;flex-wrap:wrap}.save-failure-message{flex-basis:calc(100% - 40px)}.save-failure button{margin-left:36px}.close-reminder{padding:24px}.close-reminder p{margin-left:0}.close-actions{justify-content:stretch}.close-actions button{flex:1}}
+
+.close-heading .save-warning-mark.saved{background:#426844}
