@@ -1,5 +1,5 @@
 mod library;
-use library::{Application, Chapter, LibraryView, SaveChapter};
+use library::{Application, Attachment, Chapter, LibraryView, SaveChapter};
 use serde::Serialize;
 use std::{path::Path, sync::Mutex};
 use tauri::Manager;
@@ -59,6 +59,25 @@ fn select_work(id: String, state: tauri::State<AppState>) -> library::Result<Cha
 fn save_chapter(draft: SaveChapter, state: tauri::State<AppState>) -> library::Result<Chapter> {
     access(&state, |a| a.library()?.save_chapter(&draft))
 }
+#[tauri::command]
+fn import_image(
+    content_id: String,
+    name: String,
+    bytes: Vec<u8>,
+    state: tauri::State<AppState>,
+) -> library::Result<Attachment> {
+    access(&state, |a| {
+        a.library()?.import_image(&content_id, &name, &bytes)
+    })
+}
+#[tauri::command]
+fn read_image(
+    content_id: String,
+    id: String,
+    state: tauri::State<AppState>,
+) -> library::Result<String> {
+    access(&state, |a| a.library()?.read_image(&content_id, &id))
+}
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -73,7 +92,9 @@ pub fn run() {
             open_library,
             create_work,
             select_work,
-            save_chapter
+            save_chapter,
+            import_image,
+            read_image
         ])
         .run(tauri::generate_context!())
         .expect("无法启动写一本书");

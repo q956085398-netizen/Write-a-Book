@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { application } from './application';
 import { EditorSession } from './editor-session';
 import { characterCount, errorText, type LibraryView } from './model';
+import { RichEditor } from './RichEditor';
+import { documentText } from './rich-content';
 import './styles.css';
 
 const editor = new EditorSession(application);
@@ -13,6 +15,7 @@ const saveLabels = { saved:'已保存到本地', unsaved:'尚未保存', saving:
 export default function App() {
   const snapshot = useSyncExternalStore(editor.subscribe,editor.getSnapshot);
   const chapter = snapshot.chapter;
+  const count = useMemo(() => chapter ? characterCount(documentText(chapter)) : 0, [chapter?.body, chapter?.bodyFormat]);
   const [library,setLibrary] = useState<LibraryView|null>(null);
   const [defaultPath,setDefaultPath] = useState('');
   const [ready,setReady] = useState(false);
@@ -21,7 +24,6 @@ export default function App() {
   const [error,setError] = useState<string|null>(null);
   const [creating,setCreating] = useState(false);
   const [workTitle,setWorkTitle] = useState('');
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const closeRef = useRef<() => Promise<void>>(async () => {});
   const saveRef = useRef<() => Promise<void>>(async () => {});
   const currentWork = library?.works.find(work => work.id===chapter?.workId);
@@ -56,7 +58,7 @@ export default function App() {
   }
   async function createWork() {
     await action(async () => { accept(await application.createWork(workTitle)); setWorkTitle(''); });
-    bodyRef.current?.focus();
+    document.getElementById('chapter-body')?.focus();
   }
   async function selectWork(id:string) {
     await action(async () => {
@@ -64,7 +66,7 @@ export default function App() {
       editor.load(next);
       setCreating(false);
     });
-    bodyRef.current?.focus();
+    document.getElementById('chapter-body')?.focus();
   }
   closeRef.current = () => action(async () => { await getCurrentWindow().destroy(); });
   saveRef.current = () => action(async () => {});
@@ -151,13 +153,10 @@ export default function App() {
               <label className="sr-only" htmlFor="chapter-title">章节标题</label>
               <input id="chapter-title" className="chapter-title" value={chapter.title} readOnly={busy}
                 {...compositionProps} onChange={event => editor.edit('title',event.target.value)}/>
-              <label className="sr-only" htmlFor="chapter-body">章节正文</label>
-              <textarea id="chapter-body" ref={bodyRef} className="chapter-body" spellCheck={false}
-                value={chapter.body} readOnly={busy} placeholder="在这里写下第一句话……"
-                {...compositionProps} onChange={event => editor.edit('body',event.target.value)}/>
+              <RichEditor key={chapter.contentId} chapter={chapter} session={editor} disabled={busy}/>
             </section>
           </div>
-          <footer className="editor-footer"><span>字数（含标点） {characterCount(chapter.body)}</span><span>纯文本 · 本地资料库</span></footer>
+          <footer className="editor-footer"><span>字数（含标点） {count}</span><span>图文 · 本地资料库</span></footer>
         </>}
       </main>
     </div>}

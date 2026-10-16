@@ -38,23 +38,25 @@ it('removes a manual-save failure banner when later automatic persistence succee
     ...chapter, ...draft, revision: draft.expectedRevision + 1,
   }));
   await act(async () => { root.render(<App />); });
-  const body = container.querySelector<HTMLTextAreaElement>('#chapter-body')!;
+  const body = container.querySelector<HTMLElement>('#chapter-body')!;
   async function type(text: string) {
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(body, text);
+      body.querySelector('p')!.textContent = text;
       body.dispatchEvent(new Event('input', { bubbles: true }));
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(20);
     });
   }
   await type('保存失败也要保留。');
   const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === '保存')!;
   await act(async () => { save.click(); await vi.advanceTimersByTimeAsync(0); });
   expect(container.querySelector('[role="alert"]')?.textContent).toContain('磁盘已满');
-  expect(body.value).toBe('保存失败也要保留。');
+  expect(body.textContent).toBe('保存失败也要保留。');
 
   await type('保存失败也要保留。继续写。');
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(native.saveChapter).toHaveBeenCalledTimes(2);
   expect(container.querySelector('[role="status"]')?.textContent).toBe('已保存到本地');
-  expect(body.value).toBe('保存失败也要保留。继续写。');
+  expect(body.textContent).toBe('保存失败也要保留。继续写。');
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });

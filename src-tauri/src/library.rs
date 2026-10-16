@@ -1,3 +1,5 @@
+mod attachments;
+pub use attachments::Attachment;
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -25,6 +27,7 @@ pub struct Chapter {
     pub content_id: String,
     pub title: String,
     pub body: String,
+    pub body_format: String,
     pub revision: i64,
 }
 
@@ -35,6 +38,8 @@ pub struct SaveChapter {
     pub content_id: String,
     pub title: String,
     pub body: String,
+    #[serde(default = "plain_format")]
+    pub body_format: String,
     pub expected_revision: i64,
 }
 
@@ -44,6 +49,10 @@ pub struct LibraryView {
     pub path: String,
     pub works: Vec<Work>,
     pub chapter: Option<Chapter>,
+}
+
+fn plain_format() -> String {
+    "plain-text".into()
 }
 
 pub struct Library {
@@ -83,7 +92,7 @@ impl Library {
         let version: i64 = db
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(db_error)?;
-        if existed && (app_id != APPLICATION_ID || version != 1) {
+        if existed && (app_id != APPLICATION_ID || !(1..=2).contains(&version)) {
             return Err("所选文件夹中的数据库不是受支持的写一本书资料库，原文件未修改。".into());
         }
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")
@@ -100,6 +109,13 @@ impl Library {
                 PRAGMA application_id=1463894577;
                 PRAGMA user_version=1;
             ").map_err(db_error)?;
+            tx.commit().map_err(db_error)?;
+        }
+        if version < 2 {
+            let tx = db.transaction().map_err(db_error)?;
+            tx.execute_batch("ALTER TABLE contents ADD COLUMN body_format TEXT NOT NULL DEFAULT 'plain-text';
+                CREATE TABLE attachments(id TEXT PRIMARY KEY, content_id TEXT NOT NULL REFERENCES contents(id), name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL);
+                PRAGMA user_version=2;").map_err(db_error)?;
             tx.commit().map_err(db_error)?;
         }
         // Files added by later attachment operations live under this managed boundary.
@@ -143,7 +159,7 @@ impl Library {
     fn read_chapter(&self, id: &str) -> Result<Chapter> {
         self.db
             .query_row(
-                "SELECT c.id,c.work_id,c.content_id,c.title,t.body,t.revision
+                "SELECT c.id,c.work_id,c.content_id,c.title,t.body,t.revision,t.body_format
              FROM chapters c JOIN contents t ON t.id=c.content_id WHERE c.id=?",
                 [id],
                 |r| {
@@ -154,6 +170,7 @@ impl Library {
                         title: r.get(3)?,
                         body: r.get(4)?,
                         revision: r.get(5)?,
+                        body_format: r.get(6)?,
                     })
                 },
             )
@@ -172,8 +189,11 @@ impl Library {
         let tx = self.db.transaction().map_err(db_error)?;
         tx.execute("INSERT INTO works VALUES(?,?)", params![work, title])
             .map_err(db_error)?;
-        tx.execute("INSERT INTO contents VALUES(?,'',0)", [&content])
-            .map_err(db_error)?;
+        tx.execute(
+            "INSERT INTO contents(id,body,revision) VALUES(?,'',0)",
+            [&content],
+        )
+        .map_err(db_error)?;
         tx.execute(
             "INSERT INTO chapters VALUES(?,?,?,'第一章',0)",
             params![chapter, work, content],
@@ -198,13 +218,15 @@ impl Library {
     }
 
     pub fn save_chapter(&mut self, draft: &SaveChapter) -> Result<Chapter> {
+        self.validate_body(&draft.body_format, &draft.body, &draft.content_id)?;
         let tx = self.db.transaction().map_err(db_error)?;
         let changed = tx
             .execute(
-                "UPDATE contents SET body=?,revision=revision+1 WHERE id=? AND revision=? AND
+                "UPDATE contents SET body=?,body_format=?,revision=revision+1 WHERE id=? AND revision=? AND
              EXISTS(SELECT 1 FROM chapters WHERE id=? AND content_id=contents.id)",
                 params![
                     draft.body,
+                    draft.body_format,
                     draft.content_id,
                     draft.expected_revision,
                     draft.id
@@ -221,7 +243,7 @@ impl Library {
         .map_err(db_error)?;
         let saved = tx
             .query_row(
-                "SELECT c.id,c.work_id,c.content_id,c.title,t.body,t.revision
+                "SELECT c.id,c.work_id,c.content_id,c.title,t.body,t.revision,t.body_format
              FROM chapters c JOIN contents t ON t.id=c.content_id WHERE c.id=?",
                 [&draft.id],
                 |r| {
@@ -232,6 +254,7 @@ impl Library {
                         title: r.get(3)?,
                         body: r.get(4)?,
                         revision: r.get(5)?,
+                        body_format: r.get(6)?,
                     })
                 },
             )
@@ -303,6 +326,7 @@ mod tests {
             content_id: chapter.content_id.clone(),
             title: "第一章 雨".into(),
             body: body.into(),
+            body_format: plain_format(),
             expected_revision: 0,
         };
         app.library().unwrap().save_chapter(&draft).unwrap();
@@ -345,6 +369,7 @@ mod tests {
             content_id: chapter.content_id,
             title: "新标题".into(),
             body: "已保存内容".into(),
+            body_format: plain_format(),
             expected_revision: 0,
         };
         a.save_chapter(&draft).unwrap();
