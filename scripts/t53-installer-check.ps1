@@ -73,7 +73,9 @@ function Invoke-TestInstaller {
     Assert-NoReparse $artifact
     if (-not $ExpectedVersion) { throw 'ExpectedVersion is required.' }
     if ([Diagnostics.FileVersionInfo]::GetVersionInfo($artifact).ProductVersion -ne $ExpectedVersion) { throw 'Installer version differs from ExpectedVersion.' }
-    $arguments = if ($Interactive) { "/D=$installDir" } else { "/S /D=$installDir" }
+    $mode = if ($Interactive) { '' } else { '/S' }
+    $update = if ($Action -eq 'Upgrade') { '/UPDATE' } else { '' }
+    $arguments = "$mode $update /D=$installDir".Trim()
     $windowStyle = if ($Interactive) { 'Normal' } else { 'Hidden' }
     $process = Start-Process -FilePath $artifact -ArgumentList $arguments -WindowStyle $windowStyle -PassThru -Wait
     if ($process.ExitCode -ne 0) { throw "Installer failed or was cancelled: $($process.ExitCode)" }
@@ -143,9 +145,9 @@ switch ($Action) {
         if (-not (Test-Path -LiteralPath $snapshotPath)) { throw 'Snapshot saved content before uninstall.' }
         $uninstaller = Join-Path $installDir 'uninstall.exe'
         Assert-NoReparse $uninstaller
-        $process = Start-Process -FilePath $uninstaller -ArgumentList "/S _?=$installDir" -WindowStyle Hidden -PassThru -Wait
+        $process = Start-Process -FilePath $uninstaller -ArgumentList '/S' -WindowStyle Hidden -PassThru -Wait
         if ($process.ExitCode -ne 0) { throw "Uninstaller failed: $($process.ExitCode)" }
-        if ((Test-Path -LiteralPath $uninstallKey) -or (Test-Path -LiteralPath (Join-Path $installDir 'write-a-book.exe')) -or (Test-Path -LiteralPath $startMenu) -or (Test-Path -LiteralPath $desktop)) { throw 'Uninstall left an application registration, executable or shortcut.' }
+        if ((Test-Path -LiteralPath $uninstallKey) -or (Test-Path -LiteralPath $installDir) -or (Test-Path -LiteralPath $startMenu) -or (Test-Path -LiteralPath $desktop)) { throw 'Uninstall left an application registration, installation directory or shortcut.' }
         Write-Output 'Test application removed. Run Verify, then reinstall and reopen the same library to observe preservation.'
     }
 }
