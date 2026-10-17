@@ -8,12 +8,12 @@ export function recoveryMessage(snapshot: EditorSnapshot) {
   return '当前输入仍保留，请重试保存。';
 }
 
-export function SaveFailureBanner({ snapshot, busy, onRetry }: { snapshot: EditorSnapshot; busy: boolean; onRetry: () => void }) {
+export function SaveFailureBanner({ snapshot, busy, onRetry, onRecovery }: { snapshot: EditorSnapshot; busy: boolean; onRetry: () => void; onRecovery: () => void }) {
   return <div className="save-failure" role="alert">
     <span className="save-warning-mark" aria-hidden="true">!</span>
     <div className="save-failure-message"><strong>{snapshot.status === 'saving' ? '正在重试保存…' : '保存未完成'}</strong>
       <span>{recoveryMessage(snapshot)}</span><small>{snapshot.error}</small></div>
-    <button disabled={busy} onClick={onRetry}>重试保存</button>
+    <div className="save-failure-actions"><button disabled={busy} onClick={onRetry}>重试保存</button><button disabled={busy} onClick={onRecovery}>查看恢复记录</button></div>
   </div>;
 }
 
