@@ -2,6 +2,18 @@ use super::*;
 use std::io::Write;
 
 const RECOVERY_APPLICATION_ID: i64 = 0x57415231;
+
+// Keep the original attachments intact when an explicit recovery attempt fails.
+// A successful database commit transfers ownership of these files to the library.
+#[derive(Default)]
+struct PendingRecoveryFiles(Vec<std::path::PathBuf>);
+impl Drop for PendingRecoveryFiles {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecoveryDraft {
@@ -262,6 +274,7 @@ impl Library {
         let chapter = Uuid::new_v4().to_string();
         let mut body = draft.body.clone();
         let mut attachments = vec![];
+        let mut pending_files = PendingRecoveryFiles::default();
         if draft.body_format == "wab-rich-v1" {
             let mut document: serde_json::Value = serde_json::from_str(&body).map_err(db_error)?;
             fn remap(
@@ -269,6 +282,7 @@ impl Library {
                 node: &mut serde_json::Value,
                 source: &str,
                 copies: &mut Vec<(String, String, String, i64)>,
+                pending_files: &mut PendingRecoveryFiles,
             ) -> Result<()> {
                 if node["type"] == "managedImage" {
                     let old = node["attrs"]["attachmentId"]
@@ -286,11 +300,13 @@ impl Library {
                     if bytes.len() != size {
                         return Err("图片读取不完整，恢复尚未应用。".into());
                     }
+                    let destination = library.attachment_dir()?.join(&new_id);
                     let mut file = fs::OpenOptions::new()
                         .write(true)
                         .create_new(true)
-                        .open(library.attachment_dir()?.join(&new_id))
+                        .open(&destination)
                         .map_err(db_error)?;
+                    pending_files.0.push(destination);
                     file.write_all(&bytes)
                         .and_then(|_| file.sync_all())
                         .map_err(db_error)?;
@@ -299,7 +315,7 @@ impl Library {
                 }
                 if let Some(children) = node.get_mut("content").and_then(|n| n.as_array_mut()) {
                     for child in children {
-                        remap(library, child, source, copies)?;
+                        remap(library, child, source, copies, pending_files)?;
                     }
                 }
                 Ok(())
@@ -309,6 +325,7 @@ impl Library {
                 &mut document["doc"],
                 &draft.content_id,
                 &mut attachments,
+                &mut pending_files,
             )?;
             body = serde_json::to_string(&document).map_err(db_error)?;
         }
@@ -336,7 +353,9 @@ impl Library {
             .map_err(db_error)?;
         }
         tx.execute("INSERT INTO workspace VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET chapter_id=excluded.chapter_id",[chapter]).map_err(db_error)?;
-        tx.commit().map_err(db_error)
+        tx.commit().map_err(db_error)?;
+        pending_files.0.clear();
+        Ok(())
     }
 }
 
@@ -524,9 +543,19 @@ mod tests {
         library.checkpoint_chapter(&record).unwrap();
         let candidate = library.list_recovery().unwrap().remove(0);
         library.db.execute_batch("CREATE TRIGGER fail_copy BEFORE INSERT ON chapters BEGIN SELECT RAISE(ABORT,'controlled copy failure'); END;").unwrap();
+        let files_before = fs::read_dir(library.attachment_dir().unwrap())
+            .unwrap()
+            .count();
         assert!(library
             .recover_chapter(&candidate.id, candidate.sequence, true)
             .is_err());
+        assert_eq!(
+            fs::read_dir(library.attachment_dir().unwrap())
+                .unwrap()
+                .count(),
+            files_before,
+            "a rolled-back recovery must not retain its copied image files"
+        );
         assert_eq!(library.view().unwrap().works.len(), 1);
         assert_eq!(library.list_recovery().unwrap().len(), 1);
         assert!(library
