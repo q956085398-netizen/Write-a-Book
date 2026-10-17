@@ -1,5 +1,7 @@
 # T36 多套 API 配置与独立连接测试
 
+以下保留独立分支的协议、实现和检查记录。主会话已完成入口注册、关闭保护与真实 Windows 受控端点验收，最终范围和证据见 [T03/T36 整合记录](t03-t36-integration.md)。未使用真实 AI 服务凭据，外部设计对齐未验证。
+
 ## 支持边界
 
 首个协议为 OpenAI Chat Completions 的非流式文本子集：作者填写完整 POST 地址（例如 `https://api.openai.com/v1/chat/completions`）、模型和 Bearer 密钥。不会自动拼接路径、拉取模型、探测能力、读取正文或建立 AI 会话。本实现不声明所有 OpenAI 风格服务、模型或代理兼容。`max_completion_tokens`、`store` 参数不被接受的第三方服务会如实报错，不悄悄降级或重试其他协议。单次短测试成功只证明该地址/模型接受此次请求并返回文本。

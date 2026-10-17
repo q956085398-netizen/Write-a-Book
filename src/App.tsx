@@ -8,6 +8,7 @@ import { characterCount, errorText, type LibraryView, type RecoveryCandidate } f
 import { RichEditor } from './RichEditor';
 import { CloseReminder, SaveFailureBanner } from './recovery-status';
 import { RecoveryPanel } from './RecoveryPanel';
+import { ApiSettings, type ApiSettingsActivity } from './ApiSettings';
 import { documentText } from './rich-content';
 import './styles.css';
 
@@ -28,6 +29,10 @@ export default function App() {
   const [creating,setCreating] = useState(false);
   const [closeWarning,setCloseWarning] = useState(false);
   const [closing,setClosing] = useState(false);
+  const [apiOpen,setApiOpen] = useState(false);
+  const apiActivity = useRef<ApiSettingsActivity>({ dirty:false, busy:null });
+  const [apiCloseWarning,setApiCloseWarning] = useState(false);
+  const [apiWaiting,setApiWaiting] = useState(false);
   const [recoveryOpen,setRecoveryOpen] = useState(false);
   const [recoveryRecords,setRecoveryRecords] = useState<RecoveryCandidate[]>([]);
   const [recoveryError,setRecoveryError] = useState<string|null>(null);
@@ -112,14 +117,19 @@ export default function App() {
       await readRecovery();
     });
   }
-  closeRef.current = async () => {
+  async function closeWindow() {
     if (busyRef.current) return;
     setClosing(true);
     const closed = await action(async () => { await getCurrentWindow().destroy(); });
     setClosing(false);
     if (!closed && !editor.isComposing()) setCloseWarning(true);
+  }
+  closeRef.current = async () => {
+    if (apiOpen && apiActivity.current.busy) { setApiWaiting(true); return; }
+    if (apiOpen && apiActivity.current.dirty) { setApiCloseWarning(true); return; }
+    await closeWindow();
   };
-  saveRef.current = async () => { await action(async () => {}); };
+  saveRef.current = async () => { if (!apiOpen) await action(async () => {}); };
   useEffect(() => {
     if (!isTauri()) {
       setError('请在 Windows 应用中打开写一本书。浏览器页面无法访问本地资料库。');
@@ -153,13 +163,17 @@ export default function App() {
   };
 
   return <div className="app" onCompositionEndCapture={() => setError(current => current === compositionNotice ? null : current)} onMouseDownCapture={event => { if (editor.isComposing() && event.target instanceof Element && event.target.closest('button')) event.preventDefault(); }}>
-    <header className="app-header" inert={closeWarning}>
+    <header className="app-header" inert={closeWarning || apiCloseWarning}>
       <span className="brand"><span className="brand-mark" aria-hidden="true">书</span>写一本书</span>
       {currentWork && <span className="book-context">{currentWork.title}</span>}
       <span className="local-label">本地写作</span>
+      {!apiOpen && <button disabled={!ready || busy} onClick={() => void action(async () => { apiActivity.current={dirty:false,busy:'loading'};setApiOpen(true); })}>AI 与 API</button>}
     </header>
     {error && <div className="error-banner" role="alert" inert={closeWarning}><span>{error}</span></div>}
-    {!library ? <main className="welcome" inert={closeWarning}>
+    {apiOpen ? <div className="api-host" inert={closeWarning || apiCloseWarning}>
+      {apiWaiting && <p className="error-banner" role="status">API 操作正在进行，请等待完成后再关闭窗口。</p>}
+      <ApiSettings onClose={() => {setApiOpen(false);setApiWaiting(false);}} onStateChange={activity => {apiActivity.current=activity;if (!activity.busy) setApiWaiting(false);}}/>
+    </div> : !library ? <main className="welcome" inert={closeWarning}>
       <span className="eyebrow">你的书，从这里开始</span>
       <h1>留一个地方，<br/>写下第一句话。</h1>
       <p>选择资料库，让作品保存在你自己的电脑上。<br/>无需账户，离线也能继续写。</p>
@@ -218,5 +232,9 @@ export default function App() {
       </main>
     </div>}
     {closeWarning && <CloseReminder snapshot={snapshot} error={error} busy={busy || closing} onReturn={() => setCloseWarning(false)} onRetryClose={() => void closeRef.current()}/>}
+    {apiCloseWarning && <div className="close-overlay"><section className="close-reminder" role="alertdialog" aria-modal="true" aria-labelledby="api-close-title" tabIndex={-1} ref={node => node?.focus()}>
+      <h2 id="api-close-title">API 配置还有未保存修改</h2><p>返回设置可保存当前填写项；放弃关闭会清除未保存的字段与新密钥。</p>
+      <div className="close-actions"><button onClick={() => setApiCloseWarning(false)}>返回设置</button><button onClick={() => {setApiCloseWarning(false);void closeWindow();}}>放弃修改并关闭</button></div>
+    </section></div>}
   </div>;
 }

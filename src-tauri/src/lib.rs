@@ -1,4 +1,6 @@
+mod api_profiles;
 mod library;
+use api_profiles::{api_list_profiles, api_save_profile, api_test_connection, ApiProfileState};
 use library::{
     Application, Attachment, Chapter, LibraryView, RecoveryCandidate, RecoveryDraft, SaveChapter,
 };
@@ -119,6 +121,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config = app.path().app_config_dir()?;
+            app.manage(ApiProfileState::new(config.clone()));
             let application = Application::new(&config).map_err(std::io::Error::other)?;
             app.manage(AppState(Mutex::new(application)));
             Ok(())
@@ -134,7 +137,10 @@ pub fn run() {
             list_recovery,
             recover_chapter,
             import_image,
-            read_image
+            read_image,
+            api_list_profiles,
+            api_save_profile,
+            api_test_connection
         ])
         .run(tauri::generate_context!())
         .expect("无法启动写一本书");
