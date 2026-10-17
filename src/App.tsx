@@ -4,9 +4,10 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { application } from './application';
 import { EditorSession } from './editor-session';
-import { characterCount, errorText, type LibraryView } from './model';
+import { characterCount, errorText, type LibraryView, type RecoveryCandidate } from './model';
 import { RichEditor } from './RichEditor';
 import { CloseReminder, SaveFailureBanner } from './recovery-status';
+import { RecoveryPanel } from './RecoveryPanel';
 import { documentText } from './rich-content';
 import './styles.css';
 
@@ -27,6 +28,10 @@ export default function App() {
   const [creating,setCreating] = useState(false);
   const [closeWarning,setCloseWarning] = useState(false);
   const [closing,setClosing] = useState(false);
+  const [recoveryOpen,setRecoveryOpen] = useState(false);
+  const [recoveryRecords,setRecoveryRecords] = useState<RecoveryCandidate[]>([]);
+  const [recoveryError,setRecoveryError] = useState<string|null>(null);
+  const [recoveryResult,setRecoveryResult] = useState<string|null>(null);
   const [workTitle,setWorkTitle] = useState('');
   const closeRef = useRef<() => Promise<void>>(async () => {});
   const saveRef = useRef<() => Promise<void>>(async () => {});
@@ -53,24 +58,59 @@ export default function App() {
   }
   function accept(next:LibraryView) {
     editor.load(next.chapter); setLibrary(next); setCreating(false);
+    setRecoveryOpen(false); setRecoveryRecords([]); setRecoveryError(null); setRecoveryResult(null);
   }
   async function selectLibrary(path?:string) {
     await action(async () => {
       const chosen = path ?? await open({directory:true,multiple:false,title:'选择资料库文件夹'});
-      if (typeof chosen === 'string') accept(await application.openLibrary(chosen));
+      if (typeof chosen === 'string') { accept(await application.openLibrary(chosen)); await readRecovery(); }
     });
   }
   async function createWork() {
-    const changed = await action(async () => { accept(await application.createWork(workTitle)); setWorkTitle(''); });
+    const changed = await action(async () => { accept(await application.createWork(workTitle)); setWorkTitle(''); await readRecovery(); });
     if (changed) document.getElementById('chapter-body')?.focus();
   }
   async function selectWork(id:string) {
     const changed = await action(async () => {
       const next = await application.selectWork(id);
       editor.load(next);
-      setCreating(false);
+      setCreating(false); setRecoveryOpen(false);
     });
     if (changed) document.getElementById('chapter-body')?.focus();
+  }
+  async function readRecovery() {
+    try { setRecoveryRecords(await application.listRecovery()); setRecoveryError(null); }
+    catch (cause) { setRecoveryError(`恢复记录读取失败：${errorText(cause)}`); }
+  }
+  // Recovery can branch from a revision conflict: preserve exact input without requiring a main save.
+  async function recoveryAction(operation: () => Promise<void>) {
+    if (busyRef.current) return;
+    if (editor.isComposing()) { setError(compositionNotice); return; }
+    busyRef.current=true; setBusy(true); setError(null); setRecoveryError(null);
+    try {
+      if (!(await editor.preserveForRecovery())) throw new Error(editor.getSnapshot().error ?? compositionNotice);
+      if (editor.isComposing()) throw new Error(compositionNotice);
+      await operation();
+    } catch (cause) {
+      if (editor.isComposing()) setError(compositionNotice);
+      else setRecoveryError(errorText(cause));
+    } finally { busyRef.current=false; setBusy(false); }
+  }
+  async function showRecovery() {
+    await recoveryAction(async () => {
+      await readRecovery();
+      if (editor.isComposing()) throw new Error(compositionNotice);
+      setRecoveryOpen(true);
+    });
+  }
+  async function recover(candidate: RecoveryCandidate, asCopy: boolean) {
+    if (candidate.integrityError || (!asCopy && candidate.conflict)) return;
+    await recoveryAction(async () => {
+      const next=await application.recoverChapter(candidate.id,candidate.sequence,asCopy);
+      editor.loadRecovered(next.chapter); setLibrary(next); setCreating(false); setRecoveryOpen(false);
+      setRecoveryResult(asCopy ? '已另存为恢复作品。原章节与图片继续保留。' : '已继续所选恢复版本。');
+      await readRecovery();
+    });
   }
   closeRef.current = async () => {
     if (busyRef.current) return;
@@ -96,7 +136,7 @@ export default function App() {
         const boot=await application.bootstrap();
         if (disposed) return;
         setDefaultPath(boot.defaultPath);
-        if (boot.library) accept(boot.library);
+        if (boot.library) { accept(boot.library); await readRecovery(); }
         setError(boot.restoreError);
         setReady(true);
       } catch(cause) { if (!disposed) setError(errorText(cause)); }
@@ -137,10 +177,18 @@ export default function App() {
         </nav>
         {currentWork && <div className="chapter-directory"><div className="section-heading">写作</div>
           <div className="chapter-item" aria-current="page"><span aria-hidden="true">≡</span>{chapter?.title || '未命名章节'}</div></div>}
+        <button className="recovery-sidebar-entry" disabled={busy} onClick={() => void showRecovery()}>恢复记录{recoveryRecords.length > 0 ? ` · ${recoveryRecords.length}` : ""}</button>
         <div className="library-location"><span>资料库位置</span><p title={library.path}>{library.path}</p>
           <button disabled={busy} onClick={() => void selectLibrary()}>切换资料库</button></div>
       </aside>
       <main className="main-area">
+        {snapshot.error && <SaveFailureBanner snapshot={snapshot} busy={busy || closing} onRetry={() => void saveRef.current()} onRecovery={() => void showRecovery()}/>}
+        {!recoveryOpen && (recoveryRecords.length > 0 || recoveryError || recoveryResult) && <div className="recovery-entry-notice" aria-live="polite">
+          <span>{recoveryError || recoveryResult || `检测到 ${recoveryRecords.length} 份待核对的本地恢复草稿。请查看后选择，不会自动覆盖正文。`}</span>
+          <button disabled={busy} onClick={() => void showRecovery()}>查看恢复记录</button>
+        </div>}
+        {recoveryOpen ? <RecoveryPanel current={chapter} currentStatus={saveLabels[snapshot.status]} candidates={recoveryRecords} error={recoveryError} busy={busy}
+          onRefresh={() => void recoveryAction(readRecovery)} onReturn={() => setRecoveryOpen(false)} onRecover={(candidate,asCopy) => void recover(candidate,asCopy)}/> : <>
         {creating || !chapter ? <section className="new-work">
           <span className="eyebrow">新建创作作品</span><h1>先取个暂名，<br/>然后开始写。</h1>
           <p>名字还没想好，也可以直接开始。</p>
@@ -155,7 +203,7 @@ export default function App() {
           <div className="document-bar"><span className="active-tab">{chapter.title || '未命名章节'}</span>
             <div className="save-tools"><span className={'save-state '+snapshot.status} role="status">{saveLabels[snapshot.status]}</span>
               <button disabled={busy} title="保存（Ctrl+S）" onClick={() => void saveRef.current()}>保存</button></div></div>
-          {snapshot.error && <SaveFailureBanner snapshot={snapshot} busy={busy || closing} onRetry={() => void saveRef.current()}/>}
+
           <div className="editor-scroll">
             <section className="manuscript">
               <label className="sr-only" htmlFor="chapter-title">章节标题</label>
@@ -165,6 +213,7 @@ export default function App() {
             </section>
           </div>
           <footer className="editor-footer"><span>字数（含标点） {count}</span><span>图文 · 本地资料库</span></footer>
+        </>}
         </>}
       </main>
     </div>}
