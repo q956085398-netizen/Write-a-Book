@@ -53,7 +53,7 @@ export function RecoveryPreview({ content, label }: { content: PreviewContent; l
     catch (cause) { return { doc: null, error: errorText(cause) }; }
   }, [content.body, content.bodyFormat]);
   return <section className="recovery-preview" aria-label={label}>
-    <h3 className="recovery-document-title">{content.title || '未命名章节'}</h3>
+    <h3 className="recovery-document-title">{content.title || '未命名正文'}</h3>
     {parsed.doc ? <div className="recovery-document">{renderNode(parsed.doc, content.contentId, 'doc')}</div> : <div className="content-error">
       <p>{parsed.error} 原文仅供查看与复制，未作转换。</p>
       <textarea aria-label={`${label}原始正文（全文）`} readOnly value={content.body}/>
@@ -80,7 +80,7 @@ export function RecoveryPanel({ current, currentStatus, candidates, error, busy,
     {error && <div className="recovery-error" role="alert">{error}<br/>恢复未完成时，当前内容与原恢复记录继续保留。请刷新后核对。</div>}
     <div className="recovery-columns">
       <div className="recovery-current"><h2>当前窗口内容</h2>{currentStatus && <span className="recovery-tag">{currentStatus}</span>}
-        <p className="recovery-caption">{current ? '保留进入恢复页时的完整内容。可查看与复制，恢复选择由你确认。' : '当前窗口没有打开章节。'}</p>
+        <p className="recovery-caption">{current ? '保留进入恢复页时的完整内容。可查看与复制，恢复选择由你确认。' : '当前窗口没有打开正文。'}</p>
         {current && <RecoveryPreview content={current} label="当前窗口正文全文"/>}
         {selected && (!selected.current || differs(current, selected.current)) && <div className="recovery-saved-version">
           <h2>此记录对应的资料库当前版本</h2>
@@ -95,7 +95,7 @@ export function RecoveryPanel({ current, currentStatus, candidates, error, busy,
             const valid = !candidate.integrityError && readable(candidate.draft);
             return <button key={candidate.id} className={'recovery-record'+(selected?.id === candidate.id ? ' selected' : '')}
               aria-pressed={selected?.id === candidate.id} disabled={busy} onClick={() => setSelection(candidate.id)}>
-              <span className="recovery-record-title">{candidate.draft.title || '未命名章节'} · 草稿 {index + 1}</span>
+              <span className="recovery-record-title">{candidate.draft.title || '未命名正文'} · 草稿 {index + 1}</span>
               <span className="recovery-tags"><span className={'recovery-tag '+(valid ? 'complete' : 'invalid')}>{valid ? '完整性已确认' : '完整性未确认'}</span>
                 <span className={'recovery-tag '+(candidate.conflict ? 'conflict' : 'complete')}>{candidate.conflict ? '版本先后不明' : '基线一致'}</span></span>
               <small>本会话快照序号 {candidate.sequence}</small>
@@ -111,12 +111,12 @@ export function RecoveryPanel({ current, currentStatus, candidates, error, busy,
             {complete && !selected.conflict && <button className="primary" disabled={busy} onClick={() => onRecover(selected, false)}>继续此版本</button>}
             <button disabled={busy || !complete} onClick={() => onRecover(selected, true)}>另存恢复作品</button>
           </div>
-          <p className="recovery-caption">{complete && !selected.conflict ? '接续前会再次核对基线与快照序号；当前窗口的未保存内容须先完整留存。' : '不能判断先后或内容完整性时，不覆盖原章节。完整草稿可另存为新作品。'}</p>
+          <p className="recovery-caption">{complete && !selected.conflict ? '接续前会再次核对基线与快照序号；当前窗口的未保存内容须先完整留存。' : '不能判断先后或内容完整性时，不覆盖原正文。完整草稿可另存为新作品。'}</p>
         </div>}
       </div>
       <aside className="recovery-help" aria-label="恢复说明"><h2>恢复说明</h2>
         <h3>仅在确认安全时接续</h3><p>基线一致且草稿完整时，可确认继续此版本。应用前仍会重新检查。</p>
-        <h3>另存恢复作品</h3><p>完整草稿会成为独立的新作品；原章节保留，图片一并复制。失败时保留双方内容。</p>
+        <h3>另存恢复作品</h3><p>完整草稿会成为独立的新作品；原正文保留，图片一并复制。失败时保留双方内容。</p>
         <h3>这份记录的范围</h3><p>只包含已经完整写入本地的恢复快照，不是历史版本列表或完整备份。不会自动删除作者内容，也不会发送 AI 请求。</p>
       </aside>
     </div>

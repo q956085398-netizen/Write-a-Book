@@ -35,7 +35,7 @@ export class EditorSession {
     this.idleTimer = undefined; this.continuousTimer = undefined; this.recoveryTimer = undefined; this.retryTimer = undefined; this.continuousDue = false;
   }
   load(chapter: Chapter | null) {
-    if (this.pending || this.dirty()) throw new Error('请先保存当前章节。');
+    if (this.pending || this.dirty()) throw new Error('请先保存当前正文。');
     this.clearTimers(); this.composing = false;
     this.persisted = chapter; this.protectedDraft = null;
     this.publish({ chapter, status: 'saved', error: null, recovery: null });

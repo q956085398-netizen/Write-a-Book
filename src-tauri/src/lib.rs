@@ -3,6 +3,7 @@ mod library;
 use api_profiles::{api_list_profiles, api_save_profile, api_test_connection, ApiProfileState};
 use library::{
     Application, Attachment, Chapter, LibraryView, RecoveryCandidate, RecoveryDraft, SaveChapter,
+    StructureChange,
 };
 use serde::Serialize;
 use std::{path::Path, sync::Mutex};
@@ -56,8 +57,27 @@ fn create_work(title: String, state: tauri::State<AppState>) -> library::Result<
     access(&state, |a| a.library()?.create_work(&title))
 }
 #[tauri::command]
-fn select_work(id: String, state: tauri::State<AppState>) -> library::Result<Chapter> {
-    access(&state, |a| a.library()?.select_work(&id))
+fn select_work(id: String, state: tauri::State<AppState>) -> library::Result<LibraryView> {
+    access(&state, |a| {
+        let library = a.library()?;
+        library.select_work(&id)?;
+        library.view()
+    })
+}
+#[tauri::command]
+fn select_entry(id: String, state: tauri::State<AppState>) -> library::Result<LibraryView> {
+    access(&state, |a| a.library()?.select_entry(&id))
+}
+#[tauri::command]
+fn library_view(state: tauri::State<AppState>) -> library::Result<LibraryView> {
+    access(&state, |a| a.library()?.view())
+}
+#[tauri::command]
+fn change_structure(
+    change: StructureChange,
+    state: tauri::State<AppState>,
+) -> library::Result<LibraryView> {
+    access(&state, |a| a.library()?.change_structure(change))
 }
 #[tauri::command]
 fn save_chapter(draft: SaveChapter, state: tauri::State<AppState>) -> library::Result<Chapter> {
@@ -131,6 +151,9 @@ pub fn run() {
             open_library,
             create_work,
             select_work,
+            select_entry,
+            library_view,
+            change_structure,
             save_chapter,
             checkpoint_chapter,
             acknowledge_recovery,

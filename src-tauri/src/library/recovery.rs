@@ -108,7 +108,7 @@ impl Library {
         }
         let actual = self.read_chapter(&snapshot.draft.id)?;
         if actual.content_id != snapshot.draft.content_id {
-            return Err("恢复草稿不属于此章节。".into());
+            return Err("恢复草稿不属于此正文。".into());
         }
         self.validate_body(
             &snapshot.draft.body_format,
@@ -249,7 +249,7 @@ impl Library {
                 );
             }
             self.save_chapter(&record.draft)?;
-            self.db.execute("INSERT INTO workspace VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET chapter_id=excluded.chapter_id", [&record.draft.id]).map_err(db_error)?;
+            self.select_entry(&record.draft.id)?;
         }
         // A copy was committed completely, so only that exact journal version can be retired.
         if as_copy {
@@ -329,9 +329,21 @@ impl Library {
             )?;
             body = serde_json::to_string(&document).map_err(db_error)?;
         }
+        // Old recovery payloads have no structure fields. Resolve kind by stable identity
+        // when the source still exists; a missing old source remains a standalone chapter.
+        let kind: String = self
+            .db
+            .query_row(
+                "SELECT kind FROM chapters WHERE id=? AND content_id=?",
+                params![draft.id, draft.content_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(db_error)?
+            .unwrap_or_else(|| "chapter".into());
         let tx = self.db.transaction().map_err(db_error)?;
         tx.execute(
-            "INSERT INTO works VALUES(?,?)",
+            "INSERT INTO works(id,title) VALUES(?,?)",
             params![work, format!("恢复作品 · {}", draft.title)],
         )
         .map_err(db_error)?;
@@ -341,8 +353,8 @@ impl Library {
         )
         .map_err(db_error)?;
         tx.execute(
-            "INSERT INTO chapters VALUES(?,?,?,?,0)",
-            params![chapter, work, content, draft.title],
+            "INSERT INTO chapters(id,work_id,content_id,title,position,kind) VALUES(?,?,?,?,0,?)",
+            params![chapter, work, content, draft.title, kind],
         )
         .map_err(db_error)?;
         for (id, name, mime, size) in attachments {
@@ -352,7 +364,12 @@ impl Library {
             )
             .map_err(db_error)?;
         }
-        tx.execute("INSERT INTO workspace VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET chapter_id=excluded.chapter_id",[chapter]).map_err(db_error)?;
+        tx.execute(
+            "INSERT INTO work_state(work_id,last_entry_id,structure_revision) VALUES(?,?,0)",
+            params![work, chapter],
+        )
+        .map_err(db_error)?;
+        structure::remember(&tx, &chapter)?;
         tx.commit().map_err(db_error)?;
         pending_files.0.clear();
         Ok(())

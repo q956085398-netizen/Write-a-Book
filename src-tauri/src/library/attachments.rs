@@ -333,6 +333,9 @@ mod tests {
         db.execute_batch(
             "PRAGMA application_id=1463894577; PRAGMA user_version=1;
             CREATE TABLE contents(id TEXT PRIMARY KEY,body TEXT NOT NULL,revision INTEGER NOT NULL);
+            CREATE TABLE works(id TEXT PRIMARY KEY,title TEXT NOT NULL);
+            CREATE TABLE chapters(id TEXT PRIMARY KEY,work_id TEXT NOT NULL REFERENCES works(id),content_id TEXT NOT NULL UNIQUE REFERENCES contents(id),title TEXT NOT NULL,position INTEGER NOT NULL);
+            CREATE TABLE workspace(singleton INTEGER PRIMARY KEY CHECK(singleton=1),chapter_id TEXT REFERENCES chapters(id));
             CREATE TABLE attachments(collision TEXT);",
         )
         .unwrap();

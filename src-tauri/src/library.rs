@@ -1,5 +1,7 @@
 mod attachments;
 mod recovery;
+mod schema;
+mod structure;
 pub use attachments::Attachment;
 pub use recovery::{RecoveryCandidate, RecoveryDraft};
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
@@ -9,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
+pub use structure::{Entry, ResumePosition, StructureChange, Volume};
 use uuid::Uuid;
 
 pub type Result<T> = std::result::Result<T, String>;
@@ -19,6 +22,8 @@ const APPLICATION_ID: i64 = 0x57414231;
 pub struct Work {
     pub id: String,
     pub title: String,
+    pub last_entry: Option<ResumePosition>,
+    pub structure_revision: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -51,6 +56,8 @@ pub struct LibraryView {
     pub path: String,
     pub works: Vec<Work>,
     pub chapter: Option<Chapter>,
+    pub entries: Vec<Entry>,
+    pub volumes: Vec<Volume>,
 }
 
 fn plain_format() -> String {
@@ -94,52 +101,19 @@ impl Library {
         let version: i64 = db
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(db_error)?;
-        if existed && (app_id != APPLICATION_ID || !(1..=2).contains(&version)) {
+        if existed && (app_id != APPLICATION_ID || !(1..=3).contains(&version)) {
             return Err("所选文件夹中的数据库不是受支持的写一本书资料库，原文件未修改。".into());
         }
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")
             .map_err(db_error)?;
-        if !existed {
-            let tx = db.transaction().map_err(db_error)?;
-            tx.execute_batch("
-                CREATE TABLE works(id TEXT PRIMARY KEY, title TEXT NOT NULL);
-                CREATE TABLE contents(id TEXT PRIMARY KEY, body TEXT NOT NULL, revision INTEGER NOT NULL);
-                CREATE TABLE chapters(id TEXT PRIMARY KEY, work_id TEXT NOT NULL REFERENCES works(id),
-                    content_id TEXT NOT NULL UNIQUE REFERENCES contents(id), title TEXT NOT NULL, position INTEGER NOT NULL);
-                CREATE TABLE workspace(singleton INTEGER PRIMARY KEY CHECK(singleton=1),
-                    chapter_id TEXT REFERENCES chapters(id));
-                PRAGMA application_id=1463894577;
-                PRAGMA user_version=1;
-            ").map_err(db_error)?;
-            tx.commit().map_err(db_error)?;
-        }
-        if version < 2 {
-            let tx = db.transaction().map_err(db_error)?;
-            tx.execute_batch("ALTER TABLE contents ADD COLUMN body_format TEXT NOT NULL DEFAULT 'plain-text';
-                CREATE TABLE attachments(id TEXT PRIMARY KEY, content_id TEXT NOT NULL REFERENCES contents(id), name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL);
-                PRAGMA user_version=2;").map_err(db_error)?;
-            tx.commit().map_err(db_error)?;
-        }
+        schema::initialize(&mut db, existed, version)?;
         // Files added by later attachment operations live under this managed boundary.
         fs::create_dir_all(root.join("attachments")).map_err(db_error)?;
         Ok(Self { root, db })
     }
 
     pub fn view(&self) -> Result<LibraryView> {
-        let mut query = self
-            .db
-            .prepare("SELECT id,title FROM works ORDER BY rowid")
-            .map_err(db_error)?;
-        let works = query
-            .query_map([], |r| {
-                Ok(Work {
-                    id: r.get(0)?,
-                    title: r.get(1)?,
-                })
-            })
-            .map_err(db_error)?
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(db_error)?;
+        let works = self.read_works()?;
         let active: Option<String> = self
             .db
             .query_row(
@@ -151,7 +125,16 @@ impl Library {
             .map_err(db_error)?
             .flatten();
         let chapter = active.map(|id| self.read_chapter(&id)).transpose()?;
+        let (entries, volumes) = match &chapter {
+            Some(chapter) => (
+                self.read_entries(&chapter.work_id)?,
+                self.read_volumes(&chapter.work_id)?,
+            ),
+            None => (vec![], vec![]),
+        };
         Ok(LibraryView {
+            entries,
+            volumes,
             path: self.root.to_string_lossy().into_owned(),
             works,
             chapter,
@@ -189,19 +172,27 @@ impl Library {
         let chapter = Uuid::new_v4().to_string();
         let content = Uuid::new_v4().to_string();
         let tx = self.db.transaction().map_err(db_error)?;
-        tx.execute("INSERT INTO works VALUES(?,?)", params![work, title])
-            .map_err(db_error)?;
+        tx.execute(
+            "INSERT INTO works(id,title) VALUES(?,?)",
+            params![work, title],
+        )
+        .map_err(db_error)?;
         tx.execute(
             "INSERT INTO contents(id,body,revision) VALUES(?,'',0)",
             [&content],
         )
         .map_err(db_error)?;
         tx.execute(
-            "INSERT INTO chapters VALUES(?,?,?,'第一章',0)",
+            "INSERT INTO chapters(id,work_id,content_id,title,position) VALUES(?,?,?,'第一章',0)",
             params![chapter, work, content],
         )
         .map_err(db_error)?;
-        tx.execute("INSERT INTO workspace VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET chapter_id=excluded.chapter_id", [&chapter]).map_err(db_error)?;
+        tx.execute(
+            "INSERT INTO work_state(work_id,last_entry_id,structure_revision) VALUES(?,?,0)",
+            params![work, chapter],
+        )
+        .map_err(db_error)?;
+        structure::remember(&tx, &chapter)?;
         tx.commit().map_err(db_error)?;
         self.view()
     }
@@ -210,13 +201,20 @@ impl Library {
         let chapter: String = self
             .db
             .query_row(
-                "SELECT id FROM chapters WHERE work_id=? ORDER BY position LIMIT 1",
+                "SELECT last_entry_id FROM work_state WHERE work_id=?",
                 [id],
                 |r| r.get(0),
             )
             .map_err(db_error)?;
-        self.db.execute("INSERT INTO workspace VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET chapter_id=excluded.chapter_id", [&chapter]).map_err(db_error)?;
+        self.select_entry(&chapter)?;
         self.read_chapter(&chapter)
+    }
+
+    pub fn select_entry(&mut self, id: &str) -> Result<LibraryView> {
+        let tx = self.db.transaction().map_err(db_error)?;
+        structure::remember(&tx, id)?;
+        tx.commit().map_err(db_error)?;
+        self.view()
     }
 
     pub fn save_chapter(&mut self, draft: &SaveChapter) -> Result<Chapter> {
@@ -250,7 +248,7 @@ impl Library {
                     return Ok(saved);
                 }
             }
-            return Err("保存未完成：此章节已在其他窗口中修改或不再存在。当前输入仍保留；可查看恢复草稿并另存一份，原章节不会被覆盖。".into());
+            return Err("保存未完成：此正文已在其他窗口中修改或不再存在。当前输入仍保留；可查看恢复草稿并另存一份，原正文不会被覆盖。".into());
         }
         tx.execute(
             "UPDATE chapters SET title=? WHERE id=?",
@@ -349,7 +347,7 @@ mod tests {
         drop(app);
         let mut app = Application::new(&config).unwrap();
         let reopened = app.restore().unwrap().unwrap();
-        assert_eq!(reopened.works, vec![work]);
+        assert_eq!(reopened.works[0].id, work.id);
         let restored = reopened.chapter.unwrap();
         assert_eq!(restored.id, chapter.id);
         assert_eq!(restored.content_id, chapter.content_id);

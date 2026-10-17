@@ -7,11 +7,11 @@ import { errorText } from './model';
 import type { EditorSession } from './editor-session';
 import { ManagedImage, readDocument, richExtensions, safeLink, writeDocument } from './rich-content';
 
-export function RichEditor(props: { chapter: Chapter; session: EditorSession; disabled: boolean }) {
+export function RichEditor(props: { chapter: Chapter; session: EditorSession; disabled: boolean; label?: string }) {
   const [initial] = useState(() => { try { return { doc: readDocument(props.chapter), error: '' }; } catch (error) { return { doc: null, error: errorText(error) }; } });
   return initial.doc ? <Editable {...props} initial={initial.doc}/> : <div className="content-error" role="alert"><p>{initial.error} 请先复制原文；本页不会将无法识别的内容替换为空白。</p><textarea aria-label="保留的原始正文" readOnly value={props.chapter.body}/></div>;
 }
-function Editable({ chapter, session, disabled, initial }: Parameters<typeof RichEditor>[0] & { initial: ReturnType<typeof readDocument> }) {
+function Editable({ chapter, session, disabled, initial, label }: Parameters<typeof RichEditor>[0] & { initial: ReturnType<typeof readDocument> }) {
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -55,7 +55,7 @@ function Editable({ chapter, session, disabled, initial }: Parameters<typeof Ric
     extensions: richExtensions(imageNode), content: initial, enableInputRules: false, enablePasteRules: false,
     immediatelyRender: true, shouldRerenderOnTransaction: true,
     editorProps: {
-      attributes: { id: 'chapter-body', class: 'chapter-body', role: 'textbox', 'aria-label': '章节正文', 'aria-multiline': 'true', spellcheck: 'false' },
+      attributes: { id: 'chapter-body', class: 'chapter-body', role: 'textbox', 'aria-label': label ?? '章节正文', 'aria-multiline': 'true', spellcheck: 'false' },
       handleDOMEvents: {
         compositionstart: () => { session.beginComposition(); return false; },
         compositionend: () => { setTimeout(() => { if (currentEditor.current && !currentEditor.current.isDestroyed) session.editDocument(writeDocument(currentEditor.current.getJSON())); session.endComposition(); }, 0); return false; },
@@ -76,6 +76,7 @@ function Editable({ chapter, session, disabled, initial }: Parameters<typeof Ric
   });
   currentEditor.current = editor;
   useEffect(() => { editor?.setEditable(!disabled && !importing, false); }, [editor, disabled, importing]);
+  useEffect(() => { if (editor) editor.view.dom.setAttribute('aria-label', label ?? '章节正文'); }, [editor, label]);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   if (!editor) return null;
   const blocked = disabled || importing;

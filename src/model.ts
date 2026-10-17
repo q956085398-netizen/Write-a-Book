@@ -1,6 +1,15 @@
-export interface Work { id: string; title: string }
+export interface ResumePosition { id: string; title: string; kind: 'chapter' | 'fragment' }
+export interface Work { id: string; title: string; lastEntry: ResumePosition | null; structureRevision: number }
+export interface Entry { id: string; contentId: string; title: string; kind: 'chapter' | 'fragment'; volumeId: string | null; position: number }
+export interface Volume { id: string; title: string; position: number }
+export type StructureChange = { workId: string; expectedRevision: number } & (
+  { type: 'createEntry'; kind: 'chapter' | 'fragment'; title: string; volumeId: string | null } |
+  { type: 'createVolume'; title: string } |
+  { type: 'renameVolume'; id: string; title: string } |
+  { type: 'move' | 'compileFragment'; id: string; volumeId: string | null; beforeId: string | null }
+);
 export interface Chapter { id: string; workId: string; contentId: string; title: string; body: string; bodyFormat?: string; revision: number }
-export interface LibraryView { path: string; works: Work[]; chapter: Chapter | null }
+export interface LibraryView { path: string; works: Work[]; chapter: Chapter | null; entries: Entry[]; volumes: Volume[] }
 export interface Bootstrap { defaultPath: string; library: LibraryView | null; restoreError: string | null }
 export interface SaveChapter { id: string; contentId: string; title: string; body: string; bodyFormat?: string; expectedRevision: number }
 export interface RecoveryDraft { sessionId: string; sequence: number; base: Chapter; draft: SaveChapter }
@@ -15,7 +24,10 @@ export interface ApplicationPort {
   bootstrap(): Promise<Bootstrap>;
   openLibrary(path: string): Promise<LibraryView>;
   createWork(title: string): Promise<LibraryView>;
-  selectWork(id: string): Promise<Chapter>;
+  selectWork(id: string): Promise<LibraryView>;
+  selectEntry(id: string): Promise<LibraryView>;
+  libraryView(): Promise<LibraryView>;
+  changeStructure(change: StructureChange): Promise<LibraryView>;
   saveChapter(draft: SaveChapter): Promise<Chapter>;
 }
 export const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error);

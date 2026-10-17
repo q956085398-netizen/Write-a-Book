@@ -12,5 +12,8 @@ export const application: ApplicationPort = {
   openLibrary: path => invoke('open_library', { path }),
   createWork: title => invoke('create_work', { title }),
   selectWork: id => invoke('select_work', { id }),
+  selectEntry: id => invoke('select_entry', { id }),
+  libraryView: () => invoke('library_view'),
+  changeStructure: change => invoke('change_structure', { change }),
   saveChapter: draft => invoke('save_chapter', { draft }),
 };

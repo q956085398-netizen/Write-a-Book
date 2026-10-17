@@ -4,12 +4,15 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { application } from './application';
 import { EditorSession } from './editor-session';
-import { characterCount, errorText, type LibraryView, type RecoveryCandidate } from './model';
+import { characterCount, errorText, type LibraryView, type RecoveryCandidate, type StructureChange } from './model';
 import { RichEditor } from './RichEditor';
 import { CloseReminder, SaveFailureBanner } from './recovery-status';
 import { RecoveryPanel } from './RecoveryPanel';
 import { ApiSettings, type ApiSettingsActivity } from './ApiSettings';
 import { documentText } from './rich-content';
+import { WorkShelf } from './WorkShelf';
+import { WritingDirectory, type StructureIntent } from './WritingDirectory';
+import { StructureDialog } from './StructureDialog';
 import './styles.css';
 
 const compositionNotice = '请先完成中文输入，再保存或关闭。当前文字仍保留。';
@@ -38,9 +41,18 @@ export default function App() {
   const [recoveryError,setRecoveryError] = useState<string|null>(null);
   const [recoveryResult,setRecoveryResult] = useState<string|null>(null);
   const [workTitle,setWorkTitle] = useState('');
+  const [shelfOpen,setShelfOpen] = useState(false);
+  const [shelfMode,setShelfMode] = useState<'shelf'|'list'>('shelf');
+  const [structureIntent,setStructureIntent] = useState<StructureIntent|null>(null);
+  const [structureResult,setStructureResult] = useState<string|null>(null);
+  const hadStructureDialog = useRef(false);
   const closeRef = useRef<() => Promise<void>>(async () => {});
   const saveRef = useRef<() => Promise<void>>(async () => {});
   const currentWork = library?.works.find(work => work.id===chapter?.workId);
+  const entries = (library?.entries ?? []).map(entry => entry.id === chapter?.id ? { ...entry, title: chapter.title } : entry);
+  const volumes = library?.volumes ?? [];
+  const currentEntry = entries.find(entry => entry.id === chapter?.id);
+  const isFragment = currentEntry?.kind === 'fragment';
 
   // Closing or switching must never force an IME candidate to become committed text.
   async function settleInput() {
@@ -62,7 +74,7 @@ export default function App() {
     finally { busyRef.current=false; setBusy(false); }
   }
   function accept(next:LibraryView) {
-    editor.load(next.chapter); setLibrary(next); setCreating(false);
+    editor.load(next.chapter); setLibrary(next); setCreating(false); setShelfOpen(false); setStructureIntent(null); setStructureResult(null);
     setRecoveryOpen(false); setRecoveryRecords([]); setRecoveryError(null); setRecoveryResult(null);
   }
   async function selectLibrary(path?:string) {
@@ -77,11 +89,30 @@ export default function App() {
   }
   async function selectWork(id:string) {
     const changed = await action(async () => {
-      const next = await application.selectWork(id);
-      editor.load(next);
-      setCreating(false); setRecoveryOpen(false);
+      accept(await application.selectWork(id));
     });
     if (changed) document.getElementById('chapter-body')?.focus();
+  }
+  async function selectEntry(id: string) {
+    const changed = await action(async () => accept(await application.selectEntry(id)));
+    if (changed) document.getElementById('chapter-body')?.focus();
+  }
+  async function showShelf() {
+    await action(async () => { setLibrary(await application.libraryView()); setShelfOpen(true); setCreating(false); setRecoveryOpen(false); });
+  }
+  async function showStructure(intent: StructureIntent) {
+    await action(async () => setStructureIntent(intent));
+  }
+  async function changeStructure(change: StructureChange) {
+    const changed = await action(async () => {
+      const next = await application.changeStructure(change);
+      accept(next);
+      setStructureResult(change.type === 'compileFragment' ? '已编为新章节。原片段的文字与图片完整保留。' : '目录已保存到本地。');
+    });
+    if (changed) document.getElementById('chapter-body')?.focus();
+  }
+  function moveEntry(id: string, volumeId: string | null, beforeId: string | null) {
+    if (currentWork) void changeStructure({ type:'move', workId:currentWork.id, expectedRevision:currentWork.structureRevision ?? 0, id, volumeId, beforeId });
   }
   async function readRecovery() {
     try { setRecoveryRecords(await application.listRecovery()); setRecoveryError(null); }
@@ -112,8 +143,8 @@ export default function App() {
     if (candidate.integrityError || (!asCopy && candidate.conflict)) return;
     await recoveryAction(async () => {
       const next=await application.recoverChapter(candidate.id,candidate.sequence,asCopy);
-      editor.loadRecovered(next.chapter); setLibrary(next); setCreating(false); setRecoveryOpen(false);
-      setRecoveryResult(asCopy ? '已另存为恢复作品。原章节与图片继续保留。' : '已继续所选恢复版本。');
+      editor.loadRecovered(next.chapter); setLibrary(next); setCreating(false); setRecoveryOpen(false); setShelfOpen(false); setStructureIntent(null);
+      setRecoveryResult(asCopy ? '已另存为恢复作品。原正文与图片继续保留。' : '已继续所选恢复版本。');
       await readRecovery();
     });
   }
@@ -125,11 +156,12 @@ export default function App() {
     if (!closed && !editor.isComposing()) setCloseWarning(true);
   }
   closeRef.current = async () => {
+    if (structureIntent) { setError('请先保存或取消当前目录操作，再关闭窗口。'); return; }
     if (apiOpen && apiActivity.current.busy) { setApiWaiting(true); return; }
     if (apiOpen && apiActivity.current.dirty) { setApiCloseWarning(true); return; }
     await closeWindow();
   };
-  saveRef.current = async () => { if (!apiOpen) await action(async () => {}); };
+  saveRef.current = async () => { if (!apiOpen && !structureIntent) await action(async () => {}); };
   useEffect(() => {
     if (!isTauri()) {
       setError('请在 Windows 应用中打开写一本书。浏览器页面无法访问本地资料库。');
@@ -157,20 +189,25 @@ export default function App() {
     window.addEventListener('keydown',shortcut);
     return () => { disposed=true;unlisten?.();window.removeEventListener('keydown',shortcut);editor.dispose(); };
   },[]);
+  useEffect(() => {
+    if (hadStructureDialog.current && !structureIntent) document.getElementById('chapter-body')?.focus();
+    hadStructureDialog.current = !!structureIntent;
+  }, [structureIntent]);
   const compositionProps = {
     onCompositionStart: () => editor.beginComposition(),
     onCompositionEnd: () => editor.endComposition(),
   };
 
   return <div className="app" onCompositionEndCapture={() => setError(current => current === compositionNotice ? null : current)} onMouseDownCapture={event => { if (editor.isComposing() && event.target instanceof Element && event.target.closest('button')) event.preventDefault(); }}>
-    <header className="app-header" inert={closeWarning || apiCloseWarning}>
+    <header className="app-header" inert={closeWarning || apiCloseWarning || !!structureIntent}>
       <span className="brand"><span className="brand-mark" aria-hidden="true">书</span>写一本书</span>
       {currentWork && <span className="book-context">{currentWork.title}</span>}
       <span className="local-label">本地写作</span>
+      {library && !apiOpen && <button disabled={busy} onClick={() => void showShelf()}>作品书架</button>}
       {!apiOpen && <button disabled={!ready || busy} onClick={() => void action(async () => { apiActivity.current={dirty:false,busy:'loading'};setApiOpen(true); })}>AI 与 API</button>}
     </header>
     {error && <div className="error-banner" role="alert" inert={closeWarning}><span>{error}</span></div>}
-    {apiOpen ? <div className="api-host" inert={closeWarning || apiCloseWarning}>
+    {apiOpen ? <div className="api-host" inert={closeWarning || apiCloseWarning || !!structureIntent}>
       {apiWaiting && <p className="error-banner" role="status">API 操作正在进行，请等待完成后再关闭窗口。</p>}
       <ApiSettings onClose={() => {setApiOpen(false);setApiWaiting(false);}} onStateChange={activity => {apiActivity.current=activity;if (!activity.busy) setApiWaiting(false);}}/>
     </div> : !library ? <main className="welcome" inert={closeWarning}>
@@ -182,15 +219,15 @@ export default function App() {
         <button disabled={!ready || busy} onClick={() => void selectLibrary()}>选择其他文件夹</button>
       </div>
       {defaultPath && <p className="location">默认位置<span>{defaultPath}</span></p>}
-    </main> : <div className="workspace" inert={closeWarning}>
+    </main> : <div className="workspace" inert={closeWarning || !!structureIntent}>
       <aside className="sidebar" aria-label="作品与章节">
-        <div className="section-heading"><span>作品</span><button title="新建作品" aria-label="新建作品" disabled={busy} onClick={() => void action(async () => setCreating(true))}>＋</button></div>
+        <div className="section-heading"><span>作品</span><button title="新建作品" aria-label="新建作品" disabled={busy} onClick={() => void action(async () => {setCreating(true);setShelfOpen(false);setRecoveryOpen(false);})}>＋</button></div>
         <nav className="work-list">
           {library.works.map(work => <button key={work.id} className={work.id===chapter?.workId?'selected':''} disabled={busy}
             onClick={() => void selectWork(work.id)}><span className="work-icon" aria-hidden="true">▤</span><span>{work.title}</span></button>)}
         </nav>
-        {currentWork && <div className="chapter-directory"><div className="section-heading">写作</div>
-          <div className="chapter-item" aria-current="page"><span aria-hidden="true">≡</span>{chapter?.title || '未命名章节'}</div></div>}
+        {currentWork && chapter && <WritingDirectory entries={entries} volumes={volumes} activeId={chapter.id} busy={busy}
+          onSelect={id => void selectEntry(id)} onIntent={intent => void showStructure(intent)} onMove={moveEntry}/>}
         <button className="recovery-sidebar-entry" disabled={busy} onClick={() => void showRecovery()}>恢复记录{recoveryRecords.length > 0 ? ` · ${recoveryRecords.length}` : ""}</button>
         <div className="library-location"><span>资料库位置</span><p title={library.path}>{library.path}</p>
           <button disabled={busy} onClick={() => void selectLibrary()}>切换资料库</button></div>
@@ -203,7 +240,8 @@ export default function App() {
         </div>}
         {recoveryOpen ? <RecoveryPanel current={chapter} currentStatus={saveLabels[snapshot.status]} candidates={recoveryRecords} error={recoveryError} busy={busy}
           onRefresh={() => void recoveryAction(readRecovery)} onReturn={() => setRecoveryOpen(false)} onRecover={(candidate,asCopy) => void recover(candidate,asCopy)}/> : <>
-        {creating || !chapter ? <section className="new-work">
+        {structureResult && <div className="structure-result" aria-live="polite">{structureResult}</div>}
+        {shelfOpen ? <WorkShelf works={library.works} mode={shelfMode} busy={busy} onMode={setShelfMode} onSelect={id => void selectWork(id)} onCreate={() => void action(async () => {setCreating(true);setShelfOpen(false);})}/> : creating || !chapter ? <section className="new-work">
           <span className="eyebrow">新建创作作品</span><h1>先取个暂名，<br/>然后开始写。</h1>
           <p>名字还没想好，也可以直接开始。</p>
           <form onSubmit={event => { event.preventDefault();void createWork(); }}>
@@ -214,23 +252,25 @@ export default function App() {
               {chapter && <button type="button" disabled={busy} onClick={() => setCreating(false)}>返回正文</button>}</div>
           </form>
         </section> : <>
-          <div className="document-bar"><span className="active-tab">{chapter.title || '未命名章节'}</span>
-            <div className="save-tools"><span className={'save-state '+snapshot.status} role="status">{saveLabels[snapshot.status]}</span>
+          <div className="document-bar"><span className="active-tab">{isFragment ? '片段 · ' : ''}{chapter.title || (isFragment ? '未命名片段' : '未命名章节')}</span>
+            <div className="save-tools">{isFragment && <button disabled={busy} onClick={() => void showStructure({type:'compileFragment',id:chapter.id})}>编为新章节</button>}<span className={'save-state '+snapshot.status} role="status">{saveLabels[snapshot.status]}</span>
               <button disabled={busy} title="保存（Ctrl+S）" onClick={() => void saveRef.current()}>保存</button></div></div>
 
           <div className="editor-scroll">
             <section className="manuscript">
-              <label className="sr-only" htmlFor="chapter-title">章节标题</label>
+              <label className="sr-only" htmlFor="chapter-title">{isFragment ? '片段标题' : '章节标题'}</label>
               <input id="chapter-title" className="chapter-title" value={chapter.title} readOnly={busy}
                 {...compositionProps} onChange={event => editor.edit('title',event.target.value)}/>
-              <RichEditor key={chapter.contentId} chapter={chapter} session={editor} disabled={busy}/>
+              <RichEditor key={chapter.contentId} chapter={chapter} session={editor} disabled={busy} label={isFragment ? '片段正文' : '章节正文'}/>
             </section>
           </div>
-          <footer className="editor-footer"><span>字数（含标点） {count}</span><span>图文 · 本地资料库</span></footer>
+          <footer className="editor-footer"><span>字数（含标点） {count}</span><span>{isFragment ? '未编章片段' : '章节'} · 本地资料库</span></footer>
         </>}
         </>}
       </main>
     </div>}
+    {structureIntent && currentWork && <StructureDialog intent={structureIntent} workId={currentWork.id} revision={currentWork.structureRevision ?? 0} entries={entries} volumes={volumes} busy={busy} error={error || snapshot.error}
+      onCancel={() => { setStructureIntent(null);setError(null); }} onConfirm={change => void changeStructure(change)}/>}
     {closeWarning && <CloseReminder snapshot={snapshot} error={error} busy={busy || closing} onReturn={() => setCloseWarning(false)} onRetryClose={() => void closeRef.current()}/>}
     {apiCloseWarning && <div className="close-overlay"><section className="close-reminder" role="alertdialog" aria-modal="true" aria-labelledby="api-close-title" tabIndex={-1} ref={node => node?.focus()}>
       <h2 id="api-close-title">API 配置还有未保存修改</h2><p>返回设置可保存当前填写项；放弃关闭会清除未保存的字段与新密钥。</p>
