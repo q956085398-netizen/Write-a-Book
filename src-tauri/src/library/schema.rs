@@ -134,9 +134,14 @@ pub(super) fn initialize(db: &mut Connection, existed: bool, version: i64) -> Re
     if invalid != 0 {
         return Err("目录结构或继续位置无法确认，原库未修改。".into());
     }
+    conception::initialize(&tx, existed, version)?;
     tx.commit().map_err(db_error)
 }
-fn validate_columns(db: &Connection, table: &str, expected: &[(&str, &str)]) -> Result<()> {
+pub(super) fn validate_columns(
+    db: &Connection,
+    table: &str,
+    expected: &[(&str, &str)],
+) -> Result<()> {
     let mut query = db
         .prepare(&format!("PRAGMA table_info({table})"))
         .map_err(db_error)?;
@@ -167,8 +172,8 @@ fn validate_columns(db: &Connection, table: &str, expected: &[(&str, &str)]) -> 
             .collect()
     };
     let key = match table {
-        "workspace" => "singleton",
-        "work_state" => "work_id",
+        "workspace" | "conception_defaults" => "singleton",
+        "work_state" | "conception_work_state" => "work_id",
         _ => "id",
     };
     if primary != vec![key.to_string()] {

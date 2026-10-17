@@ -1,4 +1,10 @@
 mod attachments;
+mod conception;
+pub use conception::recovery::{ConceptionRecoveryCandidate, ConceptionRecoveryDraft};
+pub use conception::{
+    ConceptionDefaults, ConceptionRecord, ConceptionReference, ConceptionSection, ConceptionView,
+    SaveConception,
+};
 mod recovery;
 mod schema;
 mod structure;
@@ -101,7 +107,7 @@ impl Library {
         let version: i64 = db
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(db_error)?;
-        if existed && (app_id != APPLICATION_ID || !(1..=3).contains(&version)) {
+        if existed && (app_id != APPLICATION_ID || !(1..=4).contains(&version)) {
             return Err("所选文件夹中的数据库不是受支持的写一本书资料库，原文件未修改。".into());
         }
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")
@@ -193,6 +199,7 @@ impl Library {
         )
         .map_err(db_error)?;
         structure::remember(&tx, &chapter)?;
+        conception::seed_work(&tx, &work)?;
         tx.commit().map_err(db_error)?;
         self.view()
     }

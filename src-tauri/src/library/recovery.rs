@@ -34,7 +34,7 @@ pub struct RecoveryCandidate {
     pub integrity_error: Option<String>,
 }
 // Accidental-corruption check, not an authenticity or hostile-tampering boundary.
-fn checksum(bytes: &[u8]) -> String {
+pub(super) fn checksum(bytes: &[u8]) -> String {
     let hash = bytes.iter().fold(0xcbf29ce484222325u64, |h, b| {
         (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
     });
@@ -56,7 +56,7 @@ fn same_base(current: &Chapter, base: &Chapter) -> bool {
         && current.body_format == base.body_format
 }
 impl Library {
-    fn recovery_db(&self) -> Result<Connection> {
+    pub(super) fn recovery_db(&self) -> Result<Connection> {
         let path = self.root.join("recovery.sqlite3");
         let existed = path.exists();
         if existed
@@ -370,6 +370,7 @@ impl Library {
         )
         .map_err(db_error)?;
         structure::remember(&tx, &chapter)?;
+        conception::seed_work(&tx, &work)?;
         tx.commit().map_err(db_error)?;
         pending_files.0.clear();
         Ok(())
