@@ -1,0 +1,25 @@
+/* T44 follows the approved A surface. No external design service was used this round. */
+.manuscript-export{color:#29343b;background:#fafaf7;border:1px solid #d9ddd5;border-radius:8px;width:min(680px,calc(100vw - 40px));max-height:calc(100dvh - 48px);padding:26px 30px;overflow:auto}
+.manuscript-export::backdrop{background:#27353d66}
+.manuscript-export header{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.manuscript-export h2{font-family:"SimSun",serif;font-size:26px;font-weight:400;margin:7px 0 12px}
+.manuscript-export .export-eyebrow{font-size:12px;letter-spacing:2px;color:#63745f;margin:0}
+.manuscript-export .export-description{line-height:1.8;color:#626e66;overflow-wrap:anywhere}
+.manuscript-export fieldset{border:0;border-top:1px solid #e9e9e6;margin:22px 0 0;padding:16px 0 0;min-width:0}
+.manuscript-export legend{padding:0 12px 0 0;font-weight:600}
+.manuscript-export label{display:flex;align-items:flex-start;gap:8px;line-height:1.7}
+.manuscript-export input{margin:5px 0 0;flex-shrink:0;accent-color:#415443}
+.manuscript-export .export-scope-options{display:flex;flex-wrap:wrap;gap:12px 24px}
+.manuscript-export .export-chapters,.manuscript-export .export-fragments{max-height:210px;overflow:auto;margin-top:12px}
+.manuscript-export .export-chapters label{padding:6px 0}
+.manuscript-export .export-fragment{padding:8px 0;border-bottom:1px solid #eeefea}
+.manuscript-export select{font:inherit;color:inherit;background:#fffefa;border:1px solid #d9ddd5;border-radius:4px;padding:7px;width:calc(100% - 24px);margin:8px 0 0 24px}
+.manuscript-export .export-hint,.manuscript-export .export-preview{font-size:12px;line-height:1.8;color:#6a7374;margin:10px 0 0}
+.manuscript-export .export-loss{padding:12px 0;color:#734726}
+.manuscript-export .export-destination{border-top:1px solid #e9e9e6;margin-top:22px;padding-top:18px}
+.manuscript-export .export-destination p,.manuscript-export .export-receipt p{overflow-wrap:anywhere;font-size:12px;line-height:1.8;user-select:text}
+.manuscript-export .export-destination label{font-size:12px}
+.manuscript-export .export-error{padding:12px;background:#f6e9dc;color:#734726;line-height:1.8;overflow-wrap:anywhere}
+.manuscript-export .export-receipt{border-left:3px solid #73836a;padding:4px 0 4px 14px;margin-top:18px}
+.manuscript-export footer{display:flex;justify-content:flex-end;gap:12px;border-top:1px solid #e9e9e6;padding-top:18px;margin-top:22px}
+@media(max-width:600px){.manuscript-export{padding:20px;width:calc(100vw - 24px)}.manuscript-export .export-scope-options{gap:12px}}
