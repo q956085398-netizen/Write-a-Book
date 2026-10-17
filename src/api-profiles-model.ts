@@ -80,6 +80,8 @@ export class ApiSettingsController {
   update(update: Partial<Omit<ApiProfileDraft, 'id'>>): void {
     if (!this.state.ready || this.state.busy) return;
     const draft = { ...this.state.draft, ...update };
+    // A changed destination must never inherit a previously entered or saved key.
+    if (update.endpoint !== undefined && update.endpoint !== this.state.draft.endpoint && !('key' in update)) draft.key = '';
     this.publish({ draft, dirty: JSON.stringify(draft) !== JSON.stringify(this.baseline), error: null, status: null });
   }
   async save(): Promise<boolean> {

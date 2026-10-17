@@ -64,3 +64,16 @@ describe('API settings draft lifecycle', () => {
     await controller.load(); expect(controller.getSnapshot().ready).toBe(true); expect(controller.getSnapshot().error).toBeNull();
   });
 });
+
+it('invalidates an inherited or already entered key as soon as its destination changes', async () => {
+  const api: ApiProfilesPort = { list: async () => [first], save: vi.fn(), test: vi.fn() };
+  const controller = new ApiSettingsController(api);
+  await controller.load();
+  controller.update({ endpoint: 'https://new.invalid/v1/chat/completions' });
+  expect(controller.getSnapshot().draft.key).toBe('');
+  controller.update({ key: 'fake-new-key' });
+  controller.update({ endpoint: 'https://other.invalid/v1/chat/completions' });
+  expect(controller.getSnapshot().draft.key).toBe('');
+  controller.update({ endpoint: first.endpoint, key: 'fake-explicit-new-key' });
+  expect(controller.getSnapshot().draft.key).toBe('fake-explicit-new-key');
+});

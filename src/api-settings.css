@@ -1,0 +1,66 @@
+/* Center form and real profile list derived from approved C; shell stays in App. */
+.api-settings{color:#29343b;background:#fafaf7;padding:26px 30px 40px;overflow:auto;min-width:0;flex:1}
+.api-settings *{box-sizing:border-box}
+.api-settings-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;border-bottom:1px solid #e9e9e6;padding-bottom:20px}
+.api-settings-eyebrow{font-size:12px;color:#748078;margin:0 0 7px;letter-spacing:.08em}
+.api-settings h1{font-family:inherit;font-size:21px;font-weight:600;line-height:1.4;margin:0;color:#27353d}
+.api-settings h2{font-size:16px;font-weight:600;line-height:1.5;margin:0}
+.api-settings button,.api-settings input{font:inherit;color:inherit}
+.api-settings button{border:1px solid #dedfd9;border-radius:6px;padding:8px 13px;background:transparent;cursor:pointer;line-height:1.5}
+.api-settings button:hover:not(:disabled){background:#eeefea}
+.api-settings button:disabled{opacity:.5;cursor:default}
+.api-settings button:focus-visible,.api-settings input:focus-visible,.api-leave-prompt:focus-visible{outline:2px solid #6c8067;outline-offset:3px}
+.api-settings-intro{margin:20px 0 18px;color:#6a7374;font-size:13px;line-height:1.8}
+.api-settings-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,30%);gap:24px;align-items:start;max-width:1440px}
+.api-settings-editor{border:1px solid #e6e8e1;border-radius:8px;padding:0 22px 18px;min-width:0}
+.api-editor-heading{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:17px 0;border-bottom:1px solid #e9e9e6;margin-bottom:20px}
+.api-editor-heading h2{overflow-wrap:anywhere;color:#415443}
+.api-editor-heading>span{font-size:12px;color:#7b837c;flex-shrink:0}
+.api-settings fieldset{border:0;margin:0;padding:0;min-width:0}
+.api-field{margin-bottom:21px}
+.api-field label{display:block;font-size:13px;margin-bottom:7px;font-weight:500}
+.api-field input{display:block;width:100%;min-width:0;border:1px solid #dedfd9;border-radius:5px;background:#fdfdfb;padding:9px 11px;line-height:1.5}
+.api-field input::placeholder{color:#969b94;font-size:12px}
+.api-field p{font-size:12px;line-height:1.7;color:#77807e;margin:5px 0 0;overflow-wrap:anywhere}
+.api-key-input{position:relative;display:flex;align-items:center}
+.api-key-input input{padding-right:62px}
+.api-key-input button{position:absolute;right:3px;border:0;padding:5px 10px;font-size:12px;color:#647266}
+.api-default-option{display:flex;align-items:center;gap:8px;font-size:12px;color:#61725f;line-height:1.7;margin:4px 0 20px}
+.api-default-option input{accent-color:#4f7456;width:15px;height:15px;margin:0}
+.api-settings-actions{display:flex;justify-content:flex-end;align-items:stretch;gap:12px}
+.api-settings-actions button{padding:10px 16px}
+.api-settings-actions small{font-size:10px;color:#7b837c;margin-left:8px}
+.api-settings .api-test-button{background:#4f7456;border-color:#4f7456;color:#fff;min-width:110px}
+.api-settings .api-test-button:hover:not(:disabled){background:#415f47}
+.api-test-notice{font-size:12px;line-height:1.8;color:#77807e;margin:17px 0 0}
+.api-test-notice code{font-family:inherit;color:#52644f}
+.api-settings-feedback{margin-top:18px}
+.api-feedback{display:flex;gap:14px;padding:14px 16px;border-radius:7px;background:#f0f4ef;color:#456b4d;line-height:1.6}
+.api-feedback-mark{width:19px;height:19px;flex-shrink:0;border:1px solid currentColor;border-radius:50%;display:grid;place-items:center;font-size:12px;margin-top:3px}
+.api-feedback strong{font-size:13px;font-weight:500}
+.api-feedback p{font-size:12px;color:#697970;margin:2px 0 0;overflow-wrap:anywhere;white-space:pre-wrap}
+.api-feedback-error{background:#f8f0ed;color:#a1523f}
+.api-feedback-error p{color:#85695f}
+.api-feedback button{margin-top:12px}
+.api-feedback-progress{background:#f0f4ef}
+.api-profile-list{min-width:0;border-left:1px solid #e9e9e6;padding-left:20px}
+.api-profile-list-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;flex-wrap:wrap}
+.api-profile-list-heading button{font-size:12px;color:#415443}
+.api-profile-list ul{list-style:none;padding:0;margin:0}
+.api-profile-list li{margin:0;border-bottom:1px solid #eceee8;padding:8px 0}
+.api-profile-list .api-profile{display:block;width:100%;border:1px solid transparent;border-radius:7px;padding:14px;text-align:left}
+.api-profile-list .api-profile:disabled{opacity:1}
+.api-profile-list .api-profile-selected{background:#eff2ec;border-color:#d2dfd0}
+.api-profile-title{display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap;font-size:14px}
+.api-profile-title strong{font-weight:500;overflow-wrap:anywhere;min-width:0;flex:1}
+.api-profile-dot{width:12px;height:12px;border:1px solid #adb7ac;border-radius:50%;flex-shrink:0}
+.api-profile-selected .api-profile-dot{border:4px solid #4f7456}
+.api-profile-badge{font-size:10px;background:#d6e9d7;color:#4f7456;border-radius:10px;padding:1px 7px}
+.api-profile-address,.api-profile-model{display:block;font-size:12px;line-height:1.7;color:#77807e;overflow-wrap:anywhere;padding-left:22px}
+.api-profile-empty,.api-profile-scope{color:#7b837c;font-size:12px;line-height:1.8;margin:20px 0}
+.api-leave-prompt{border:1px solid #d8c6a5;background:#f7f2e8;border-radius:7px;padding:18px;margin:20px 0}
+.api-leave-prompt h2{font-size:15px;color:#735e3d}
+.api-leave-prompt p{font-size:13px;line-height:1.8;color:#796b53;margin:8px 0 14px}
+.api-prompt-actions{display:flex;gap:10px;flex-wrap:wrap}
+@media(max-width:1000px){.api-settings{padding:22px}.api-settings-columns{grid-template-columns:minmax(0,1fr)}.api-profile-list{border-left:0;border-top:1px solid #e9e9e6;padding:20px 0 0}.api-profile-list ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.api-profile-list li{padding:0}.api-profile-scope{margin-bottom:0}}
+@media(max-width:520px){.api-settings{padding:18px 14px}.api-settings-editor{padding:0 14px 14px}.api-settings-heading{align-items:start}.api-settings-heading>button{font-size:12px}.api-settings-actions{flex-wrap:wrap;justify-content:stretch}.api-settings-actions button{flex:1}.api-settings-actions small{display:block;margin:2px 0 0}.api-editor-heading{align-items:start}.api-editor-heading>span{font-size:11px}}
