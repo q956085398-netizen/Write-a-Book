@@ -2,16 +2,27 @@ import { useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { Editor } from '@tiptap/core';
 import { application } from './application';
+import { characterCount } from './model';
+import type { EditorCharacterCounts } from './character-count';
 import type { Chapter } from './model';
 import { errorText } from './model';
 import type { EditorSession } from './editor-session';
 import { ManagedImage, readDocument, richExtensions, safeLink, writeDocument } from './rich-content';
 
-export function RichEditor(props: { chapter: Chapter; session: EditorSession; disabled: boolean; label?: string }) {
+export function RichEditor(props: { chapter: Chapter; session: EditorSession; disabled: boolean; label?: string; onCharacterCountsChange?: (counts: EditorCharacterCounts | null) => void }) {
+  return <InitialEditor key={props.chapter.contentId} {...props}/>;
+}
+function InitialEditor(props: Parameters<typeof RichEditor>[0]) {
   const [initial] = useState(() => { try { return { doc: readDocument(props.chapter), error: '' }; } catch (error) { return { doc: null, error: errorText(error) }; } });
   return initial.doc ? <Editable {...props} initial={initial.doc}/> : <div className="content-error" role="alert"><p>{initial.error} 请先复制原文；本页不会将无法识别的内容替换为空白。</p><textarea aria-label="保留的原始正文" readOnly value={props.chapter.body}/></div>;
 }
-function Editable({ chapter, session, disabled, initial, label }: Parameters<typeof RichEditor>[0] & { initial: ReturnType<typeof readDocument> }) {
+function Editable({ chapter, session, disabled, initial, label, onCharacterCountsChange }: Parameters<typeof RichEditor>[0] & { initial: ReturnType<typeof readDocument> }) {
+  const countCallback = useRef(onCharacterCountsChange);
+  countCallback.current = onCharacterCountsChange;
+  function reportCounts(editor: Editor) {
+    const { from, to } = editor.state.selection;
+    countCallback.current?.({ contentId: chapter.contentId, current: characterCount(editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n')), selection: characterCount(editor.state.doc.textBetween(from, to, '\n')) });
+  }
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -73,8 +84,10 @@ function Editable({ chapter, session, disabled, initial, label }: Parameters<typ
       },
     },
     onUpdate: ({ editor }) => session.editDocument(writeDocument(editor.getJSON())),
+    onTransaction: ({ editor }) => reportCounts(editor),
   });
   currentEditor.current = editor;
+  useEffect(() => { if (editor) reportCounts(editor); return () => { countCallback.current?.(null); }; }, [editor]);
   useEffect(() => { editor?.setEditable(!disabled && !importing, false); }, [editor, disabled, importing]);
   useEffect(() => { if (editor) editor.view.dom.setAttribute('aria-label', label ?? '章节正文'); }, [editor, label]);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
