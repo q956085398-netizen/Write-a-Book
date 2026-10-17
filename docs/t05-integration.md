@@ -1,6 +1,6 @@
 # T05 本地整合与真实 Windows 验收
 
-2026-10-17，Issue #6。实现提交 `41ae8be1cf156cb2bf32dd9f4d2a74b235a5b143` 已快进整合到本地 main；本轮尚未推送、回填或关闭 #6。此前授权覆盖的 #37 已发布关闭，#4 仍开放。
+2026-10-17，Issue #6。实现提交 `41ae8be1cf156cb2bf32dd9f4d2a74b235a5b143` 与整合验收提交 `c76dcc578accaa1ac6fd1a564699789a425b81ba` 已经用户授权推送，并[回填真实结果](https://github.com/q956085398-netizen/Write-a-Book/issues/6#issuecomment-6230556645)及关闭 #6。此前的 #37 已发布关闭，#4 仍开放。
 
 ## 分工、复杂度与复核
 

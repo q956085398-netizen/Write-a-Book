@@ -1,9 +1,11 @@
 mod attachments;
+mod character_counts;
+pub use character_counts::WorkCharacterCounts;
 mod conception;
+pub mod manuscript_export;
 pub use conception::recovery::{ConceptionRecoveryCandidate, ConceptionRecoveryDraft};
 pub use conception::{
-    ConceptionDefaults, ConceptionRecord, ConceptionReference, ConceptionSection, ConceptionView,
-    SaveConception,
+    ConceptionDefaults, ConceptionRecord, ConceptionSection, ConceptionView, SaveConception,
 };
 mod recovery;
 mod schema;

@@ -1,18 +1,22 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { application } from './application';
 import { EditorSession } from './editor-session';
-import { characterCount, errorText, type LibraryView, type RecoveryCandidate, type StructureChange } from './model';
+import { errorText, type LibraryView, type RecoveryCandidate, type StructureChange } from './model';
 import { RichEditor } from './RichEditor';
 import { CloseReminder, SaveFailureBanner } from './recovery-status';
 import { RecoveryPanel } from './RecoveryPanel';
 import { ApiSettings, type ApiSettingsActivity } from './ApiSettings';
-import { documentText } from './rich-content';
+import { CharacterCountFooter } from './character-count/CharacterCountFooter';
+import { useCharacterCounts } from './character-count/useCharacterCounts';
 import { WorkShelf } from './WorkShelf';
 import { WritingDirectory, type StructureIntent } from './WritingDirectory';
 import { StructureDialog } from './StructureDialog';
+import { ManuscriptExport } from './manuscript-export/ManuscriptExport';
+import { nativeExportPort } from './manuscript-export/native-port';
+import { ConceptionController, ConceptionWorkspace, conceptionPort } from './conception';
 import './styles.css';
 
 const compositionNotice = '请先完成中文输入，再保存或关闭。当前文字仍保留。';
@@ -20,9 +24,11 @@ const saveLabels = { saved:'已保存到本地', unsaved:'尚未保存', saving:
 
 export default function App() {
   const [editor] = useState(() => new EditorSession(application));
+  const [conception] = useState(() => new ConceptionController(conceptionPort));
+  const conceptionSnapshot = useSyncExternalStore(conception.subscribe,conception.getSnapshot);
+  const [conceptionOpen,setConceptionOpen] = useState(false);
   const snapshot = useSyncExternalStore(editor.subscribe,editor.getSnapshot);
   const chapter = snapshot.chapter;
-  const count = useMemo(() => chapter ? characterCount(documentText(chapter)) : 0, [chapter?.body, chapter?.bodyFormat]);
   const [library,setLibrary] = useState<LibraryView|null>(null);
   const [defaultPath,setDefaultPath] = useState('');
   const [ready,setReady] = useState(false);
@@ -45,6 +51,9 @@ export default function App() {
   const [shelfMode,setShelfMode] = useState<'shelf'|'list'>('shelf');
   const [structureIntent,setStructureIntent] = useState<StructureIntent|null>(null);
   const [structureResult,setStructureResult] = useState<string|null>(null);
+  const [exportOpen,setExportOpen] = useState(false);
+  const [exportWaiting,setExportWaiting] = useState(false);
+  const exportBusyRef = useRef(false);
   const hadStructureDialog = useRef(false);
   const closeRef = useRef<() => Promise<void>>(async () => {});
   const saveRef = useRef<() => Promise<void>>(async () => {});
@@ -53,9 +62,11 @@ export default function App() {
   const volumes = library?.volumes ?? [];
   const currentEntry = entries.find(entry => entry.id === chapter?.id);
   const isFragment = currentEntry?.kind === 'fragment';
+  const characterCounts = useCharacterCounts(library, chapter, busy || snapshot.status === 'saving' || snapshot.status === 'error');
 
   // Closing or switching must never force an IME candidate to become committed text.
   async function settleInput() {
+    if (!(await conception.flush())) throw new Error(conception.getSnapshot().editor.error ?? conception.getSnapshot().error ?? compositionNotice);
     if (!(await editor.flush())) throw new Error(editor.getSnapshot().error ?? compositionNotice);
   }
   async function action(operation: () => Promise<void>) {
@@ -68,19 +79,19 @@ export default function App() {
       return true;
     } catch (cause) {
       // Persistence errors belong to EditorSession so a later successful autosave clears them.
-      setError(editor.isComposing() ? compositionNotice : editor.getSnapshot().error ? null : errorText(cause));
+      setError(editor.isComposing() || conception.isComposing() ? compositionNotice : editor.getSnapshot().error ? null : errorText(cause));
       return false;
     }
     finally { busyRef.current=false; setBusy(false); }
   }
   function accept(next:LibraryView) {
-    editor.load(next.chapter); setLibrary(next); setCreating(false); setShelfOpen(false); setStructureIntent(null); setStructureResult(null);
+    editor.load(next.chapter); setLibrary(next); setCreating(false); setShelfOpen(false); setConceptionOpen(false); setStructureIntent(null); setStructureResult(null);
     setRecoveryOpen(false); setRecoveryRecords([]); setRecoveryError(null); setRecoveryResult(null);
   }
   async function selectLibrary(path?:string) {
     await action(async () => {
       const chosen = path ?? await open({directory:true,multiple:false,title:'选择资料库文件夹'});
-      if (typeof chosen === 'string') { accept(await application.openLibrary(chosen)); await readRecovery(); }
+      if (typeof chosen === 'string') { const next=await application.openLibrary(chosen);conception.reset();accept(next);await readRecovery(); }
     });
   }
   async function createWork() {
@@ -98,7 +109,17 @@ export default function App() {
     if (changed) document.getElementById('chapter-body')?.focus();
   }
   async function showShelf() {
-    await action(async () => { setLibrary(await application.libraryView()); setShelfOpen(true); setCreating(false); setRecoveryOpen(false); });
+    await action(async () => { setLibrary(await application.libraryView()); setShelfOpen(true); setCreating(false); setRecoveryOpen(false); setConceptionOpen(false); });
+  }
+  async function showConception() {
+    if (!currentWork) return;
+    await action(async () => {
+      if (!(await conception.openWork(currentWork.id))) throw new Error(conception.getSnapshot().error ?? '构思暂时无法打开，正文仍保留。');
+      setConceptionOpen(true);setShelfOpen(false);setCreating(false);setRecoveryOpen(false);
+    });
+  }
+  async function showWriting() {
+    await action(async () => {setConceptionOpen(false);setShelfOpen(false);setCreating(false);setRecoveryOpen(false);});
   }
   async function showStructure(intent: StructureIntent) {
     await action(async () => setStructureIntent(intent));
@@ -133,10 +154,11 @@ export default function App() {
     } finally { busyRef.current=false; setBusy(false); }
   }
   async function showRecovery() {
+    if (!(await conception.flush())) {setError(conception.getSnapshot().editor.error ?? conception.getSnapshot().error ?? compositionNotice);return;}
     await recoveryAction(async () => {
       await readRecovery();
       if (editor.isComposing()) throw new Error(compositionNotice);
-      setRecoveryOpen(true);
+      setRecoveryOpen(true);setConceptionOpen(false);
     });
   }
   async function recover(candidate: RecoveryCandidate, asCopy: boolean) {
@@ -153,9 +175,11 @@ export default function App() {
     setClosing(true);
     const closed = await action(async () => { await getCurrentWindow().destroy(); });
     setClosing(false);
-    if (!closed && !editor.isComposing()) setCloseWarning(true);
+    if (!closed && !editor.isComposing() && !conception.isComposing()) setCloseWarning(true);
   }
   closeRef.current = async () => {
+    if (exportBusyRef.current) { setExportWaiting(true); return; }
+    if (exportOpen) { setExportOpen(false); setExportWaiting(false); }
     if (structureIntent) { setError('请先保存或取消当前目录操作，再关闭窗口。'); return; }
     if (apiOpen && apiActivity.current.busy) { setApiWaiting(true); return; }
     if (apiOpen && apiActivity.current.dirty) { setApiCloseWarning(true); return; }
@@ -187,7 +211,7 @@ export default function App() {
       if (event.ctrlKey && event.key.toLowerCase()==='s') { event.preventDefault(); void saveRef.current(); }
     };
     window.addEventListener('keydown',shortcut);
-    return () => { disposed=true;unlisten?.();window.removeEventListener('keydown',shortcut);editor.dispose(); };
+    return () => { disposed=true;unlisten?.();window.removeEventListener('keydown',shortcut);editor.dispose();conception.dispose(); };
   },[]);
   useEffect(() => {
     if (hadStructureDialog.current && !structureIntent) document.getElementById('chapter-body')?.focus();
@@ -198,12 +222,13 @@ export default function App() {
     onCompositionEnd: () => editor.endComposition(),
   };
 
-  return <div className="app" onCompositionEndCapture={() => setError(current => current === compositionNotice ? null : current)} onMouseDownCapture={event => { if (editor.isComposing() && event.target instanceof Element && event.target.closest('button')) event.preventDefault(); }}>
+  return <div className="app" onCompositionEndCapture={() => setError(current => current === compositionNotice ? null : current)} onMouseDownCapture={event => { if ((editor.isComposing() || conception.isComposing()) && event.target instanceof Element && event.target.closest('button')) event.preventDefault(); }}>
     <header className="app-header" inert={closeWarning || apiCloseWarning || !!structureIntent}>
       <span className="brand"><span className="brand-mark" aria-hidden="true">书</span>写一本书</span>
       {currentWork && <span className="book-context">{currentWork.title}</span>}
       <span className="local-label">本地写作</span>
       {library && !apiOpen && <button disabled={busy} onClick={() => void showShelf()}>作品书架</button>}
+      {library && chapter && !apiOpen && <button disabled={busy} onClick={() => void action(async () => {setExportOpen(true);setExportWaiting(false);})}>导出书稿</button>}
       {!apiOpen && <button disabled={!ready || busy} onClick={() => void action(async () => { apiActivity.current={dirty:false,busy:'loading'};setApiOpen(true); })}>AI 与 API</button>}
     </header>
     {error && <div className="error-banner" role="alert" inert={closeWarning}><span>{error}</span></div>}
@@ -221,12 +246,13 @@ export default function App() {
       {defaultPath && <p className="location">默认位置<span>{defaultPath}</span></p>}
     </main> : <div className="workspace" inert={closeWarning || !!structureIntent}>
       <aside className="sidebar" aria-label="作品与章节">
-        <div className="section-heading"><span>作品</span><button title="新建作品" aria-label="新建作品" disabled={busy} onClick={() => void action(async () => {setCreating(true);setShelfOpen(false);setRecoveryOpen(false);})}>＋</button></div>
+        <div className="section-heading"><span>作品</span><button title="新建作品" aria-label="新建作品" disabled={busy} onClick={() => void action(async () => {setCreating(true);setShelfOpen(false);setRecoveryOpen(false);setConceptionOpen(false);})}>＋</button></div>
         <nav className="work-list">
           {library.works.map(work => <button key={work.id} className={work.id===chapter?.workId?'selected':''} disabled={busy}
             onClick={() => void selectWork(work.id)}><span className="work-icon" aria-hidden="true">▤</span><span>{work.title}</span></button>)}
         </nav>
-        {currentWork && chapter && <WritingDirectory entries={entries} volumes={volumes} activeId={chapter.id} busy={busy}
+        {currentWork && <nav className="work-mode" aria-label="当前作品目录"><button className={!conceptionOpen ? 'selected' : ''} disabled={busy} onClick={() => void showWriting()}>写作</button><button className={conceptionOpen ? 'selected' : ''} disabled={busy} onClick={() => void showConception()}>构思</button></nav>}
+        {!conceptionOpen && currentWork && chapter && <WritingDirectory entries={entries} volumes={volumes} activeId={chapter.id} busy={busy}
           onSelect={id => void selectEntry(id)} onIntent={intent => void showStructure(intent)} onMove={moveEntry}/>}
         <button className="recovery-sidebar-entry" disabled={busy} onClick={() => void showRecovery()}>恢复记录{recoveryRecords.length > 0 ? ` · ${recoveryRecords.length}` : ""}</button>
         <div className="library-location"><span>资料库位置</span><p title={library.path}>{library.path}</p>
@@ -238,7 +264,7 @@ export default function App() {
           <span>{recoveryError || recoveryResult || `检测到 ${recoveryRecords.length} 份待核对的本地恢复草稿。请查看后选择，不会自动覆盖正文。`}</span>
           <button disabled={busy} onClick={() => void showRecovery()}>查看恢复记录</button>
         </div>}
-        {recoveryOpen ? <RecoveryPanel current={chapter} currentStatus={saveLabels[snapshot.status]} candidates={recoveryRecords} error={recoveryError} busy={busy}
+        {conceptionOpen ? <ConceptionWorkspace controller={conception} disabled={busy} onReturn={() => void showWriting()}/> : recoveryOpen ? <RecoveryPanel current={chapter} currentStatus={saveLabels[snapshot.status]} candidates={recoveryRecords} error={recoveryError} busy={busy}
           onRefresh={() => void recoveryAction(readRecovery)} onReturn={() => setRecoveryOpen(false)} onRecover={(candidate,asCopy) => void recover(candidate,asCopy)}/> : <>
         {structureResult && <div className="structure-result" aria-live="polite">{structureResult}</div>}
         {shelfOpen ? <WorkShelf works={library.works} mode={shelfMode} busy={busy} onMode={setShelfMode} onSelect={id => void selectWork(id)} onCreate={() => void action(async () => {setCreating(true);setShelfOpen(false);})}/> : creating || !chapter ? <section className="new-work">
@@ -261,17 +287,21 @@ export default function App() {
               <label className="sr-only" htmlFor="chapter-title">{isFragment ? '片段标题' : '章节标题'}</label>
               <input id="chapter-title" className="chapter-title" value={chapter.title} readOnly={busy}
                 {...compositionProps} onChange={event => editor.edit('title',event.target.value)}/>
-              <RichEditor key={chapter.contentId} chapter={chapter} session={editor} disabled={busy} label={isFragment ? '片段正文' : '章节正文'}/>
+              <RichEditor key={chapter.contentId} chapter={chapter} session={editor} disabled={busy} label={isFragment ? '片段正文' : '章节正文'} onCharacterCountsChange={characterCounts.onCounts}/>
             </section>
           </div>
-          <footer className="editor-footer"><span>字数（含标点） {count}</span><span>{isFragment ? '未编章片段' : '章节'} · 本地资料库</span></footer>
+          <footer className="editor-footer"><CharacterCountFooter counts={characterCounts.counts} live={characterCounts.live} kind={isFragment ? 'fragment' : 'chapter'}/><span>{isFragment ? '未编章片段' : '章节'} · 本地资料库</span></footer>
         </>}
         </>}
       </main>
     </div>}
+    {exportOpen && chapter && <ManuscriptExport workId={chapter.workId} currentEntryId={chapter.id} port={nativeExportPort} closeRequested={exportWaiting}
+      beforeExport={async () => {if (!(await action(async () => {}))) throw new Error(editor.getSnapshot().error ?? compositionNotice);}}
+      onActivityChange={active => {exportBusyRef.current=active;if (!active) setExportWaiting(false);}}
+      onClose={() => {if (!exportBusyRef.current) {setExportOpen(false);setExportWaiting(false);}}}/>}
     {structureIntent && currentWork && <StructureDialog intent={structureIntent} workId={currentWork.id} revision={currentWork.structureRevision ?? 0} entries={entries} volumes={volumes} busy={busy} error={error || snapshot.error}
       onCancel={() => { setStructureIntent(null);setError(null); }} onConfirm={change => void changeStructure(change)}/>}
-    {closeWarning && <CloseReminder snapshot={snapshot} error={error} busy={busy || closing} onReturn={() => setCloseWarning(false)} onRetryClose={() => void closeRef.current()}/>}
+    {closeWarning && <CloseReminder snapshot={conceptionOpen ? conceptionSnapshot.editor : snapshot} error={error || (conceptionOpen ? conceptionSnapshot.error : null)} busy={busy || closing} onReturn={() => setCloseWarning(false)} onRetryClose={() => void closeRef.current()}/>}
     {apiCloseWarning && <div className="close-overlay"><section className="close-reminder" role="alertdialog" aria-modal="true" aria-labelledby="api-close-title" tabIndex={-1} ref={node => node?.focus()}>
       <h2 id="api-close-title">API 配置还有未保存修改</h2><p>返回设置可保存当前填写项；放弃关闭会清除未保存的字段与新密钥。</p>
       <div className="close-actions"><button onClick={() => setApiCloseWarning(false)}>返回设置</button><button onClick={() => {setApiCloseWarning(false);void closeWindow();}}>放弃修改并关闭</button></div>

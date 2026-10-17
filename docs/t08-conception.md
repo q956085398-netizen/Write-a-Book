@@ -1,6 +1,6 @@
 # T08 自由构思与作品分区
 
-本交付是独立构思模块，供主会话串行接入 App 与 Tauri 命令。此 worktree 没有修改 App.tsx、model.ts、application.ts、RichEditor.tsx、styles.css、lib.rs 或现有测试，未宣称已经完成真实应用入口或 Windows 界面验收。
+主会话现已串行接入 App 与 Tauri 命令，图文编辑复用 RichEditor；全量检查、真实 Windows 保存失败/关闭/重开及分区验收见 [本批整合记录](t08-t44-t46-integration.md)。下文“当前证据”保留独立代理交付时的验证范围，不代表最终整合仍未接通。
 
 ## 作者行为与保存范围
 

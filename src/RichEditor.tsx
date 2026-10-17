@@ -4,19 +4,19 @@ import type { Editor } from '@tiptap/core';
 import { application } from './application';
 import { characterCount } from './model';
 import type { EditorCharacterCounts } from './character-count';
-import type { Chapter } from './model';
+import type { Chapter, ApplicationPort } from './model';
 import { errorText } from './model';
 import type { EditorSession } from './editor-session';
 import { ManagedImage, readDocument, richExtensions, safeLink, writeDocument } from './rich-content';
 
-export function RichEditor(props: { chapter: Chapter; session: EditorSession; disabled: boolean; label?: string; onCharacterCountsChange?: (counts: EditorCharacterCounts | null) => void }) {
+export function RichEditor(props: { chapter: Chapter; session: EditorSession; disabled: boolean; label?: string; editorId?: string; imagePort?: Pick<ApplicationPort, 'readImage' | 'importImage'>; onCharacterCountsChange?: (counts: EditorCharacterCounts | null) => void }) {
   return <InitialEditor key={props.chapter.contentId} {...props}/>;
 }
 function InitialEditor(props: Parameters<typeof RichEditor>[0]) {
   const [initial] = useState(() => { try { return { doc: readDocument(props.chapter), error: '' }; } catch (error) { return { doc: null, error: errorText(error) }; } });
   return initial.doc ? <Editable {...props} initial={initial.doc}/> : <div className="content-error" role="alert"><p>{initial.error} 请先复制原文；本页不会将无法识别的内容替换为空白。</p><textarea aria-label="保留的原始正文" readOnly value={props.chapter.body}/></div>;
 }
-function Editable({ chapter, session, disabled, initial, label, onCharacterCountsChange }: Parameters<typeof RichEditor>[0] & { initial: ReturnType<typeof readDocument> }) {
+function Editable({ chapter, session, disabled, initial, label, editorId = 'chapter-body', imagePort = application, onCharacterCountsChange }: Parameters<typeof RichEditor>[0] & { initial: ReturnType<typeof readDocument> }) {
   const countCallback = useRef(onCharacterCountsChange);
   countCallback.current = onCharacterCountsChange;
   function reportCounts(editor: Editor) {
@@ -36,7 +36,7 @@ function Editable({ chapter, session, disabled, initial, label, onCharacterCount
       const dom = document.createElement('figure'); dom.className = 'managed-image'; dom.contentEditable = 'false';
       const label = document.createElement('span'); label.textContent = '图片读取中…'; dom.append(label);
       let cancelled = false;
-      void application.readImage(chapter.contentId, node.attrs.attachmentId).then(src => {
+      void imagePort.readImage(chapter.contentId, node.attrs.attachmentId).then(src => {
         if (cancelled) return;
         const img = document.createElement('img'); img.src = src; img.alt = node.attrs.alt || '资料库图片';
         img.addEventListener('error', () => { label.textContent = '图片无法显示，正文仍保留。'; dom.replaceChildren(label); });
@@ -53,7 +53,7 @@ function Editable({ chapter, session, disabled, initial, label, onCharacterCount
       // Import each file fully before changing the document. The close/switch barrier waits here.
       for (const file of files) {
         if (file.size > 20 * 1024 * 1024) throw new Error('图片超过 20 MB，尚未插入。');
-        const attachment = await application.importImage(chapter.contentId, file.name, Array.from(new Uint8Array(await file.arrayBuffer())));
+        const attachment = await imagePort.importImage(chapter.contentId, file.name, Array.from(new Uint8Array(await file.arrayBuffer())));
         if (editor.isDestroyed) throw new Error('编辑已结束，图片已归入资料库但未插入正文。');
         editor.chain().insertContent({ type: 'managedImage', attrs: { attachmentId: attachment.id, alt: attachment.name } }).run();
       }
@@ -66,7 +66,7 @@ function Editable({ chapter, session, disabled, initial, label, onCharacterCount
     extensions: richExtensions(imageNode), content: initial, enableInputRules: false, enablePasteRules: false,
     immediatelyRender: true, shouldRerenderOnTransaction: true,
     editorProps: {
-      attributes: { id: 'chapter-body', class: 'chapter-body', role: 'textbox', 'aria-label': label ?? '章节正文', 'aria-multiline': 'true', spellcheck: 'false' },
+      attributes: { id: editorId, class: 'chapter-body', role: 'textbox', 'aria-label': label ?? '章节正文', 'aria-multiline': 'true', spellcheck: 'false' },
       handleDOMEvents: {
         compositionstart: () => { session.beginComposition(); return false; },
         compositionend: () => { setTimeout(() => { if (currentEditor.current && !currentEditor.current.isDestroyed) session.editDocument(writeDocument(currentEditor.current.getJSON())); session.endComposition(); }, 0); return false; },

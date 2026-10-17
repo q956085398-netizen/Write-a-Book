@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { buildExportRequest, selectedChapters, type ExportManifest, type ExportPort, type ExportReceipt, type ExportScope } from './export-port';
 import './manuscript-export.css';
-export function ManuscriptExport({ workId, currentEntryId, port, beforeExport, onClose, onActivityChange }: { workId: string; currentEntryId: string; port: ExportPort; beforeExport: () => Promise<void>; onClose: () => void; onActivityChange?: (busy: boolean) => void }) {
+export function ManuscriptExport({ workId, currentEntryId, port, beforeExport, onClose, onActivityChange, closeRequested = false }: { workId: string; currentEntryId: string; port: ExportPort; beforeExport: () => Promise<void>; onClose: () => void; onActivityChange?: (busy: boolean) => void; closeRequested?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const operationBusy = useRef(false);
   const activityCallback = useRef(onActivityChange); activityCallback.current = onActivityChange;
@@ -46,6 +46,7 @@ export function ManuscriptExport({ workId, currentEntryId, port, beforeExport, o
   function changeScope(value: typeof scopeKind) { setScopeKind(value); setReceipt(null); }
   return <dialog ref={dialog} className="manuscript-export" aria-labelledby="manuscript-export-title" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
     <header><div><p className="export-eyebrow">独立书稿文件</p><h2 id="manuscript-export-title">导出书稿</h2></div><button type="button" onClick={onClose} disabled={busy}>关闭</button></header>
+    {closeRequested && <p role="status">导出操作正在进行，请等待完成后再关闭窗口。</p>}
     {!manifest ? <><p role={error ? 'alert' : 'status'}>{error || '正在读取当前作品目录…'}</p><button disabled={busy} onClick={() => void reloadManifest()}>重新读取目录</button></> : <>
       <p className="export-description">{manifest.title} · 仅导出正文。构思、随记与参考不会加入。章节按目录顺序排列。</p>
       <button disabled={busy} onClick={() => void reloadManifest()}>重新读取目录</button>

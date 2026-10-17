@@ -12,13 +12,17 @@
 又比如，无论是拆书还是写作，都不时会有灵感跳出，这个时候要怎么设计灵感库和灵感收集页？如何区分专属于这本书的灵感，还有通用的灵感？
 又比如，写作的时候不一定都是在写正文，有时候希望会有个便签或者侧页，可以写下这章的目标是什么？情绪是什么？人物有谁？之类的，不要试图定制化统一页面，因为这些会随着写作不断需要修改。
 
-## 本地应用：图文写作、保存恢复与 API 配置（T01、T02、T03、T05、T36、T53）
+## 本地应用：写作、自由构思、书稿导出与保存恢复
 
 当前实现资料库选择、书架与紧凑列表、新建暂名作品、章节与可选分卷排序、独立正文片段及同身份编章、图文编辑、常用格式、资料库图片、自动/手动保存、正常关闭补存与重新打开继续写，并提供 Windows NSIS 安装包。核心写作操作无需账户、网络或 AI 配置。这些是完整首版的早期交付路径，不代表其余模块已完成。
 
 新增保存失败持续提示、自动重试、独立本地恢复快照、完整图文对照和冲突另存；AI 与 API 设置支持多套命名配置、默认项、Windows 当前用户加密密钥及主动连接测试。保存配置不发请求，连接测试只发送固定短句。T03 的原生候选焦点保护尚未确认；本轮实现、真实窗口验证与未验证项见 [T03/T36 整合记录](docs/t03-t36-integration.md)。
 
-旧 schema 1/2 资料库经结构、稳定身份与数据校验后，在单一事务中升级到 schema 3；旧正文仅在实际编辑时转为结构化图文，已有恢复日志继续可读。升级后须使用支持 schema 3 的应用，旧版本程序无法打开该版本资料库。T05 的移动语义见 [多作品、卷章与片段](docs/t05-works-structure.md)，主会话的真实 Windows 迁移、编章、失败重试及重开检查见 [T05 整合验收](docs/t05-integration.md)。
+新增按作品管理的自由构思：直接写一句话或图文，同一记录可以在多个分区引用；分区可改名、排序、隐藏并从设置恢复入口，新作品默认分区只影响之后创建的作品。构思使用独立恢复快照，保存失败时阻止切换或关闭，并保留完整草稿。正文页脚显示非空白 Unicode 码点字数（含标点），区分选区、当前正文、全书章节与未编章片段；图片、卷章名和构思不计入。
+
+书稿可按当前章、选定章节或全书导出 Word/TXT；未编章片段须主动选择插入位置，构思和参考不混入正文。TXT 需确认样式与图片损失，已有目标默认不覆盖。本轮原生操作、文件检查和本地浏览器预览通过；Microsoft Word 实际显示尚未验证，#45 保持开放。实现与证据边界见 [T08/T44/T46 整合验收](docs/t08-t44-t46-integration.md)。
+
+旧 schema 1/2/3 资料库经结构、稳定身份与数据校验后，以事务升级到 schema 4；旧正文仅在实际编辑时转为结构化图文，已有恢复日志继续可读。升级后须使用支持 schema 4 的应用，旧版本程序无法打开该版本资料库。T05 的移动语义见 [多作品、卷章与片段](docs/t05-works-structure.md)，此前真实 Windows 迁移、编章、失败重试及重开检查见 [T05 整合验收](docs/t05-integration.md)。
 
 Windows 开发环境需 Node.js 22.12+（或 24+）、Rust MSVC 工具链、Visual Studio C++ 构建工具及 WebView2。
 
@@ -44,4 +48,4 @@ Windows 开发环境需 Node.js 22.12+（或 24+）、Rust MSVC 工具链、Visu
     npm run build
     cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
-存储边界、验证记录与尚未完成范围见 [T01 实现说明](docs/t01-first-chapter.md)、[T02 图文编辑](docs/t02-rich-editor.md)、[T03 保存恢复](docs/t03-save-recovery.md)、[T05 多作品与正文片段](docs/t05-works-structure.md)、[T36 API 配置](docs/t36-api-profiles.md)和 [T53 安装与资料保留](docs/t53-windows-installer.md)。最终整包仍需集成验收工单复测。
+存储边界、验证记录与尚未完成范围见 [T01 实现说明](docs/t01-first-chapter.md)、[T02 图文编辑](docs/t02-rich-editor.md)、[T03 保存恢复](docs/t03-save-recovery.md)、[T05 多作品与正文片段](docs/t05-works-structure.md)、[T08 自由构思](docs/t08-conception.md)、[T44 书稿导出](docs/t44-manuscript-export.md)、[T46 字数](docs/t46-character-counts.md)、[T36 API 配置](docs/t36-api-profiles.md)和 [T53 安装与资料保留](docs/t53-windows-installer.md)。最终整包仍需集成验收工单复测。

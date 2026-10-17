@@ -1,9 +1,12 @@
 mod api_profiles;
 mod library;
 use api_profiles::{api_list_profiles, api_save_profile, api_test_connection, ApiProfileState};
+use library::manuscript_export::{ExportManifest, ExportReceipt, ExportRequest};
 use library::{
-    Application, Attachment, Chapter, LibraryView, RecoveryCandidate, RecoveryDraft, SaveChapter,
-    StructureChange,
+    Application, Attachment, Chapter, ConceptionDefaults, ConceptionRecord,
+    ConceptionRecoveryCandidate, ConceptionRecoveryDraft, ConceptionSection, ConceptionView,
+    LibraryView, RecoveryCandidate, RecoveryDraft, SaveChapter, SaveConception, StructureChange,
+    WorkCharacterCounts,
 };
 use serde::Serialize;
 use std::{path::Path, sync::Mutex};
@@ -136,6 +139,127 @@ fn read_image(
 ) -> library::Result<String> {
     access(&state, |a| a.library()?.read_image(&content_id, &id))
 }
+#[tauri::command]
+fn character_counts(
+    work_id: String,
+    state: tauri::State<AppState>,
+) -> library::Result<WorkCharacterCounts> {
+    access(&state, |a| a.library()?.character_counts(&work_id))
+}
+#[tauri::command]
+fn manuscript_manifest(
+    work_id: String,
+    state: tauri::State<AppState>,
+) -> library::Result<ExportManifest> {
+    access(&state, |a| a.library()?.manuscript_manifest(&work_id))
+}
+#[tauri::command]
+fn export_manuscript(
+    request: ExportRequest,
+    state: tauri::State<AppState>,
+) -> library::Result<ExportReceipt> {
+    access(&state, |a| a.library()?.export_manuscript(&request))
+}
+#[tauri::command]
+fn conception_view(
+    work_id: String,
+    state: tauri::State<AppState>,
+) -> library::Result<ConceptionView> {
+    access(&state, |a| a.library()?.conception_view(&work_id))
+}
+#[tauri::command]
+fn conception_defaults(state: tauri::State<AppState>) -> library::Result<ConceptionDefaults> {
+    access(&state, |a| a.library()?.conception_defaults())
+}
+#[tauri::command]
+fn change_conception_defaults(
+    expected_revision: i64,
+    sections: Vec<ConceptionSection>,
+    state: tauri::State<AppState>,
+) -> library::Result<ConceptionDefaults> {
+    access(&state, |a| {
+        a.library()?
+            .change_conception_defaults(expected_revision, &sections)
+    })
+}
+#[tauri::command]
+fn change_conception_sections(
+    work_id: String,
+    expected_revision: i64,
+    sections: Vec<ConceptionSection>,
+    state: tauri::State<AppState>,
+) -> library::Result<ConceptionView> {
+    access(&state, |a| {
+        a.library()?
+            .change_conception_sections(&work_id, expected_revision, &sections)
+    })
+}
+#[tauri::command]
+fn create_conception(
+    work_id: String,
+    section_id: String,
+    state: tauri::State<AppState>,
+) -> library::Result<ConceptionRecord> {
+    access(&state, |a| {
+        a.library()?.create_conception(&work_id, &section_id)
+    })
+}
+#[tauri::command]
+fn reference_conception(
+    work_id: String,
+    record_id: String,
+    section_id: String,
+    state: tauri::State<AppState>,
+) -> library::Result<ConceptionView> {
+    access(&state, |a| {
+        a.library()?
+            .reference_conception(&work_id, &record_id, &section_id)
+    })
+}
+#[tauri::command]
+fn save_conception(
+    draft: SaveConception,
+    state: tauri::State<AppState>,
+) -> library::Result<ConceptionRecord> {
+    access(&state, |a| a.library()?.save_conception(&draft))
+}
+#[tauri::command]
+fn checkpoint_conception(
+    snapshot: ConceptionRecoveryDraft,
+    state: tauri::State<AppState>,
+) -> library::Result<()> {
+    access(&state, |a| a.library()?.checkpoint_conception(&snapshot))
+}
+#[tauri::command]
+fn acknowledge_conception_recovery(
+    session_id: String,
+    content_id: String,
+    sequence: i64,
+    state: tauri::State<AppState>,
+) -> library::Result<()> {
+    access(&state, |a| {
+        a.library()?
+            .acknowledge_conception_recovery(&session_id, &content_id, sequence)
+    })
+}
+#[tauri::command]
+fn list_conception_recovery(
+    work_id: String,
+    state: tauri::State<AppState>,
+) -> library::Result<Vec<ConceptionRecoveryCandidate>> {
+    access(&state, |a| a.library()?.list_conception_recovery(&work_id))
+}
+#[tauri::command]
+fn recover_conception(
+    id: String,
+    sequence: i64,
+    as_copy: bool,
+    state: tauri::State<AppState>,
+) -> library::Result<ConceptionRecord> {
+    access(&state, |a| {
+        a.library()?.recover_conception(&id, sequence, as_copy)
+    })
+}
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -161,6 +285,20 @@ pub fn run() {
             recover_chapter,
             import_image,
             read_image,
+            character_counts,
+            manuscript_manifest,
+            export_manuscript,
+            conception_view,
+            conception_defaults,
+            change_conception_defaults,
+            change_conception_sections,
+            create_conception,
+            reference_conception,
+            save_conception,
+            checkpoint_conception,
+            acknowledge_conception_recovery,
+            list_conception_recovery,
+            recover_conception,
             api_list_profiles,
             api_save_profile,
             api_test_connection
